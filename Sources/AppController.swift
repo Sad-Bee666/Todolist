@@ -199,12 +199,21 @@ final class AppController: ObservableObject, TodoIngest {
         }
     }
 
-    func copyKeyToPasteboard() -> Bool {
-        let account = SecretBox.account(for: settings.settings.ai.provider)
-        guard let key = SecretBox.load(account: account), !key.isEmpty else { return false }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(key, forType: .string)
-        return true
+    /// 剪贴板里像不像一个 API Key（单行、无空白、长度合理、字符合法）。
+    static func keyCandidate(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (16...300).contains(trimmed.count) else { return nil }
+        guard !trimmed.contains(where: { $0.isWhitespace }) else { return nil }
+        let allowed = CharacterSet(charactersIn:
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        guard trimmed.unicodeScalars.allSatisfy({ allowed.contains($0) }) else { return nil }
+        return trimmed
+    }
+
+    /// 读剪贴板并返回可用的 Key 候选。
+    func keyFromPasteboard() -> String? {
+        guard let raw = NSPasteboard.general.string(forType: .string) else { return nil }
+        return AppController.keyCandidate(from: raw)
     }
 
     func testAIConnection() async -> String {

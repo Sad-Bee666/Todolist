@@ -47,6 +47,7 @@ struct SettingsView: View {
         .frame(width: 520, height: 640)
         .onAppear {
             reloadKey()
+            autoFillFromPasteboard()
             if app.keyPresent { refreshModels(showError: false) }
         }
         .onChange(of: settings.settings.ai.provider) { _ in
@@ -134,9 +135,10 @@ struct SettingsView: View {
 
                 Button(showKey ? "隐藏" : "显示") { showKey.toggle() }
                     .help("显示后可选中复制")
+                Button("粘贴") { pasteKey() }
+                    .help("从剪贴板填入 Key")
                 Button(testing ? "测试中…" : "保存并测试") { saveAndTest() }
                     .disabled(testing)
-                Button("复制") { copyKey() }
                 Button("删除") { deleteKey() }
             }
             HStack(spacing: 8) {
@@ -216,15 +218,26 @@ struct SettingsView: View {
         app.refreshKeyPresence()
     }
 
-    private func copyKey() {
-        if app.copyKeyToPasteboard() {
-            probeMessage = "已复制到剪贴板"
-        } else if !keyDraft.isEmpty {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(keyDraft, forType: .string)
-            probeMessage = "已复制输入框内容"
+    /// 打开设置时若还没存 Key，且剪贴板里像 Key，就自动填进输入框（不自动保存，等确认）。
+    private func autoFillFromPasteboard() {
+        guard keyDraft.isEmpty else { return }
+        guard let candidate = app.keyFromPasteboard() else { return }
+        keyDraft = candidate
+        probeMessage = "已从剪贴板填入 Key，确认后点「保存并测试」"
+    }
+
+    private func pasteKey() {
+        if let candidate = app.keyFromPasteboard() {
+            keyDraft = candidate
+            probeMessage = "已从剪贴板粘贴，点「保存并测试」"
+            return
+        }
+        if let raw = NSPasteboard.general.string(forType: .string),
+           !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            keyDraft = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            probeMessage = "剪贴板内容格式不像 Key，已原样填入，请自行核对"
         } else {
-            probeMessage = "还没有可复制的 Key"
+            probeMessage = "剪贴板里没有文本"
         }
     }
 
