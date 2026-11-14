@@ -2,16 +2,23 @@
 
 菜单栏常驻的原生 macOS 待办应用。事项以「截止时间 + 事项」呈现，支持手写填入、截图 OCR 提取、以及模型解析自然语言写入。
 
-<img src="docs/screenshots/menubar-panel.png" width="380" alt="菜单栏面板">
+<img src="docs/screenshots/panel.png" width="380" alt="菜单栏面板">
 
 MIT License · 无第三方依赖 · 纯 Swift / AppKit + SwiftUI
 
-## 构建与安装
+## 安装
+
+从 [Releases](https://github.com/Sad-Bee666/Todolist/releases) 下载 `Todolist-x.y.z.dmg`，打开后把 Todolist 拖进 Applications。
+
+## 从源码构建
 
 ```bash
 ./build.sh     # 产出 dist/Todolist.app（含 ad-hoc 本地签名）
 ./install.sh   # 复制到 ~/Applications 并启动
+./package.sh   # 产出 dist/Todolist-x.y.z.dmg
 ```
+
+推送 `v*` 形式的 tag 会触发 GitHub Actions 自动构建并上传 DMG 到 Release。
 
 - 需要 macOS 14+（本机 26.4，arm64）。
 - 工具链只依赖 Xcode Command Line Tools。构建脚本显式传入 `-sdk` 与 `-module-cache-path`（沙箱环境下模块缓存必须落在项目内）。
@@ -82,8 +89,7 @@ Sources/
 
 | 文件 | 内容 |
 | --- | --- |
-| `menubar-panel.png` | 已安装版本实跑：鼠标悬停展开、截止时间+事项、过期标红、来源角标 |
-| `panel.png` | 面板全态（今天/明天 与日期形式混排、无截止时间置底、已完成沉底） |
+| `panel.png` | 面板全态（今天/明天 与日期形式混排、无截止时间置底、已完成沉底、过期标红） |
 | `panel-empty.png` | 空列表态 |
 | `settings.png` | 设置窗全貌 |
 

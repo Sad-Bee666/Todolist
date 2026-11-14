@@ -1,0 +1,32 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建并打包 DMG
+        run: |
+          chmod +x build.sh package.sh
+          ./package.sh
+
+      - name: 创建 Release 并上传 DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" dist/*.dmg \
+              --title "Todolist $TAG" \
+              --notes "菜单栏待办应用 $TAG。下载 .dmg，打开后把 Todolist 拖进 Applications。" \
+              --latest
