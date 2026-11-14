@@ -49,6 +49,43 @@ final class AppController: ObservableObject, TodoIngest {
         }
     }
 
+    /// 真正生效的远端判定：开关打开 + 有 Key + 接口可路由。
+    var usesRemoteModel: Bool {
+        settings.settings.useRemoteModel && keyPresent && settings.settings.ai.isRoutable
+    }
+
+    var modelLabel: String {
+        guard settings.settings.useRemoteModel else { return "本地规则" }
+        let model = settings.settings.ai.model
+        guard !model.isEmpty else { return "选择模型" }
+        return keyPresent ? model : model + " · 缺 Key"
+    }
+
+    func setUseRemoteModel(_ enabled: Bool) {
+        settings.settings.useRemoteModel = enabled
+        if enabled && !keyPresent {
+            postStatus("还没有 API Key：齿轮 → 填 Key。当前仍走本地规则", isError: true)
+        } else if enabled {
+            postStatus("已启用 API 模型：\(settings.settings.ai.model)")
+        } else {
+            postStatus("已切回本地规则")
+        }
+    }
+
+    func selectModel(_ provider: AIProvider, _ model: String) {
+        settings.applyProviderDefaults(provider)
+        settings.settings.ai.model = model
+        if !settings.settings.useRemoteModel {
+            settings.settings.useRemoteModel = true
+        }
+        refreshKeyPresence()
+        if keyPresent {
+            postStatus("已切换到 \(provider.displayName) · \(model)")
+        } else {
+            postStatus("已选 \(provider.displayName) · \(model)，还缺 \(provider.displayName) 的 API Key", isError: true)
+        }
+    }
+
     func makeActions() -> PanelActions {
         PanelActions(
             addManual: { [weak self] text in self?.addManual(text: text) },
@@ -127,7 +164,7 @@ final class AppController: ObservableObject, TodoIngest {
     private func extractAndStoreReturningCount(text: String, source: TodoSource) async throws -> Int {
         let config = settings.settings.ai
         let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
-        let useRemote = !key.isEmpty && config.isRoutable
+        let useRemote = settings.settings.useRemoteModel && !key.isEmpty && config.isRoutable
         let service: AIServicing = useRemote ? remoteAI : localAI
         let parsed = try await service.extractTodos(from: text, now: Date(), config: config, apiKey: key)
         guard !parsed.isEmpty else {

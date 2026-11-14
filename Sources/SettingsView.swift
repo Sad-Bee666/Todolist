@@ -109,6 +109,11 @@ struct SettingsView: View {
             Text("行为").font(.headline)
             Toggle("鼠标移到菜单栏图标上自动展开面板", isOn: $settings.settings.hoverOpensPanel)
                 .toggleStyle(.switch)
+            Toggle("面板上的「用 API 模型」开关（关闭则用本地规则解析）", isOn: Binding(
+                get: { settings.settings.useRemoteModel },
+                set: { app.setUseRemoteModel($0) }
+            ))
+            .toggleStyle(.switch)
             Text("手写填入与截图识别都会自动解析出截止时间后写入，无需额外点击。")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)

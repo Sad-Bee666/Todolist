@@ -203,27 +203,54 @@ struct TodoPanelView: View {
                 Button { actions.startCapture() } label: {
                     Label("截图识别", systemImage: "camera.viewfinder")
                 }
-                Spacer()
-                engineBadge
+                .buttonStyle(.bordered)
+                modelMenu
+                Spacer(minLength: 4)
+                Toggle("", isOn: Binding(
+                    get: { app.settings.settings.useRemoteModel },
+                    set: { app.setUseRemoteModel($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("用配置的 API 模型解析待办；关闭则用本地规则解析")
             }
             .font(.system(size: 11))
-            .buttonStyle(.bordered)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
     }
 
-    private var engineBadge: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(app.keyPresent ? Color.green : Color.orange)
-                .frame(width: 6, height: 6)
-            Text(app.keyPresent ? app.settings.settings.ai.model : "本地规则")
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
+    private var modelMenu: some View {
+        Menu {
+            ForEach([AIProvider.deepseek, AIProvider.openai], id: \.self) { provider in
+                Section(provider.displayName) {
+                    ForEach(provider.knownModels, id: \.self) { model in
+                        Button(model) { app.selectModel(provider, model) }
+                    }
+                }
+            }
+            Divider()
+            Button("自定义 / 更多设置…") { actions.openSettings() }
+        } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(app.usesRemoteModel ? Color.green : Color.orange)
+                    .frame(width: 6, height: 6)
+                Image(systemName: app.usesRemoteModel ? "sparkles" : "cpu")
+                    .font(.system(size: 10))
+                Text(app.modelLabel)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+            }
+            .foregroundColor(app.settings.settings.useRemoteModel ? .primary : .secondary)
         }
-        .help(app.keyPresent ? "使用远端模型解析" : "未配置 API Key，使用本地规则解析")
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(app.usesRemoteModel
+              ? "当前使用 \(app.settings.settings.ai.model) 解析，点击切换模型"
+              : "当前用本地规则解析，点击选择模型")
     }
 
     private func commit() {

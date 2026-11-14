@@ -91,6 +91,17 @@ enum AIProvider: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+extension AIProvider {
+    /// 面板上可直接选择的模型；自定义预设交给设置页填。
+    var knownModels: [String] {
+        switch self {
+        case .deepseek: return ["deepseek-chat", "deepseek-reasoner"]
+        case .openai: return ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"]
+        case .custom: return []
+        }
+    }
+}
+
 struct AIConfig: Codable, Equatable {
     var provider: AIProvider
     var baseURL: String
@@ -135,15 +146,28 @@ struct AppSettings: Codable, Equatable {
     var hotkey: HotKeySpec
     var hoverOpensPanel: Bool
     var hoverCloseDelay: Double
+    /// 面板上的「用 API 模型」开关：关掉则一律用本地规则解析。
+    var useRemoteModel: Bool
 
     init(ai: AIConfig = AIConfig(),
          hotkey: HotKeySpec = .standard,
          hoverOpensPanel: Bool = true,
-         hoverCloseDelay: Double = 0.35) {
+         hoverCloseDelay: Double = 0.35,
+         useRemoteModel: Bool = true) {
         self.ai = ai
         self.hotkey = hotkey
         self.hoverOpensPanel = hoverOpensPanel
         self.hoverCloseDelay = hoverCloseDelay
+        self.useRemoteModel = useRemoteModel
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ai = try container.decodeIfPresent(AIConfig.self, forKey: .ai) ?? AIConfig()
+        hotkey = try container.decodeIfPresent(HotKeySpec.self, forKey: .hotkey) ?? .standard
+        hoverOpensPanel = try container.decodeIfPresent(Bool.self, forKey: .hoverOpensPanel) ?? true
+        hoverCloseDelay = try container.decodeIfPresent(Double.self, forKey: .hoverCloseDelay) ?? 0.35
+        useRemoteModel = try container.decodeIfPresent(Bool.self, forKey: .useRemoteModel) ?? true
     }
 }
 
