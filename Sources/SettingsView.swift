@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var probeMessage: String?
     @State private var availableModels: [String] = []
     @State private var showModelChooser: Bool = false
+    @State private var selectedModels: Set<String> = []
 
     private var providerBinding: Binding<AIProvider> {
         Binding(
@@ -56,11 +57,10 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showModelChooser) {
             ModelChooser(
-                models: availableModels,
-                current: settings.settings.ai.model,
-                onPick: { picked in
-                    settings.settings.ai.model = picked
-                    probeMessage = "已选用 \(picked)"
+                models: availableModels.isEmpty ? settings.settings.ai.selectableModels : availableModels,
+                selected: $selectedModels,
+                onCommit: { picked in
+                    applySelectedModels(picked)
                     showModelChooser = false
                 },
                 onCancel: { showModelChooser = false }
@@ -90,23 +90,17 @@ struct SettingsView: View {
             }
 
             HStack(spacing: 8) {
-                Text("模型").font(.system(size: 12)).frame(width: 68, alignment: .leading)
-                if availableModels.isEmpty {
-                    TextField("deepseek-chat", text: modelBinding)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                } else {
-                    Picker("", selection: modelBinding) {
-                        ForEach(availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
+                Text("调用模型").font(.system(size: 12)).frame(width: 68, alignment: .leading)
+                Picker("", selection: modelBinding) {
+                    ForEach(settings.settings.ai.selectableModels, id: \.self) { model in
+                        Text(model).tag(model)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 220)
                 }
-                Button(fetching ? "获取中…" : "获取可用模型") { refreshModels(showError: true) }
-                    .disabled(fetching || keyDraft.isEmpty)
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 220)
+                Button("管理模型（多选）") { openModelManager() }
+                    .disabled(fetching)
                 Spacer()
             }
 
@@ -264,9 +258,46 @@ struct SettingsView: View {
             probeMessage = result.message
             availableModels = result.models
             if !result.models.isEmpty {
+                selectedModels = Set(settings.settings.ai.selectableModels.filter { result.models.contains($0) })
+                if selectedModels.isEmpty, let first = result.models.first { selectedModels = [first] }
                 showModelChooser = true
             }
         }
+    }
+
+    private func openModelManager() {
+        selectedModels = Set(settings.settings.ai.selectableModels)
+        if !availableModels.isEmpty {
+            showModelChooser = true
+            return
+        }
+        guard app.keyPresent else {
+            probeMessage = "先保存 API Key，才能拉取可选模型"
+            return
+        }
+        fetching = true
+        Task { @MainActor in
+            let result = await app.probeConnection()
+            fetching = false
+            probeMessage = result.message
+            availableModels = result.models
+            if !result.models.isEmpty {
+                selectedModels = Set(settings.settings.ai.selectableModels.filter { result.models.contains($0) })
+                if selectedModels.isEmpty, let first = result.models.first { selectedModels = [first] }
+                showModelChooser = true
+            }
+        }
+    }
+
+    private func applySelectedModels(_ picked: Set<String>) {
+        guard !picked.isEmpty else { return }
+        var ai = settings.settings.ai
+        let ordered = (availableModels.isEmpty ? ai.selectableModels : availableModels).filter { picked.contains($0) }
+        guard !ordered.isEmpty else { return }
+        ai.models = ordered
+        if !ordered.contains(ai.model) { ai.model = ordered[0] }
+        settings.settings.ai = ai
+        probeMessage = "已保留 " + String(ordered.count) + " 个模型，当前调用 " + ai.model
     }
 
     private func refreshModels(showError: Bool) {
@@ -290,40 +321,43 @@ struct SettingsView: View {
 
 struct ModelChooser: View {
     let models: [String]
-    let current: String
-    let onPick: (String) -> Void
+    @Binding var selected: Set<String>
+    let onCommit: (Set<String>) -> Void
     let onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("选择模型").font(.headline)
-            Text("该接口返回 \(models.count) 个可用模型，选一个作为解析待办的默认模型。")
+            Text("选择可用模型").font(.headline)
+            Text("可多选：勾选的模型会保留在列表里，之后在面板上挑一个实际调用。")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(models, id: \.self) { model in
-                        Button { onPick(model) } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: model == current ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(model == current ? .accentColor : .secondary)
-                                Text(model).font(.system(size: 12))
-                                Spacer()
+                        Toggle(isOn: Binding(
+                            get: { selected.contains(model) },
+                            set: { on in
+                                if on { selected.insert(model) } else { selected.remove(model) }
                             }
-                            .contentShape(Rectangle())
-                            .padding(.vertical, 6)
+                        )) {
+                            Text(model).font(.system(size: 12))
                         }
-                        .buttonStyle(.plain)
+                        .toggleStyle(.checkbox)
+                        .padding(.vertical, 5)
                     }
                 }
             }
-            .frame(height: 180)
-            HStack {
+            .frame(height: 190)
+            HStack(spacing: 8) {
+                Button("全选") { selected = Set(models) }
+                Button("清空") { selected = [] }
                 Spacer()
                 Button("取消", action: onCancel)
+                Button("完成") { onCommit(selected) }
+                    .disabled(selected.isEmpty)
             }
         }
         .padding(18)
-        .frame(width: 360)
+        .frame(width: 380)
     }
 }

@@ -34,7 +34,7 @@ MIT License · 无第三方依赖 · 纯 Swift / AppKit + SwiftUI
 | 点面板外 / Esc | 收起 |
 | 底部输入框回车 | 手写填入，**添加时自动解析**出事项与截止时间后写入（无需额外按钮） |
 | ⌃⌥T / 「截图识别」 | 框选屏幕区域 → 本机 Vision 取字 → 自动解析 → 写入 |
-| 「截图识别」右侧的模型菜单 | 直接选模型（DeepSeek: deepseek-chat / deepseek-reasoner，OpenAI: gpt-4o-mini / gpt-4o / gpt-4.1-mini），选了即切预设与 Base URL |
+| 「截图识别」右侧的模型菜单 | 从设置里多选保留的模型列表中挑一个实际调用，选中即生效 |
 | 同一行的开关 | 「用 API 模型」：开=远端模型解析，关=本地规则解析；没填 Key 时标签会标「· 缺 Key」并仍走本地规则 |
 | 「⋯」 | 清除已完成 / 打开数据文件夹 / 退出 |
 
@@ -53,7 +53,8 @@ OpenAI 兼容协议（`POST <Base URL>/chat/completions`），三档预设：
 | 自定义 | 自填 | 自填 |
 
 - Key 存在 `~/Library/Application Support/Todolist/secrets/api-key-<provider>.key`，权限 0600，按预设分开存放。刻意不用钥匙串：ad-hoc 签名的应用每次重建签名都会变，会反复弹授权框。
-- 设置页顺序：Base URL → 模型提供商 → 模型。点「保存并测试」会请求 `GET <Base URL>/models`：既验证连通性，也把接口返回的模型列出来弹窗让你选；若接口不提供 `/models`，会退回一次对话探测并保留手填的模型名。
+- 设置页顺序：Base URL → 模型提供商 → 调用模型。点「保存并测试」会请求 `GET <Base URL>/models`：既验证连通性，也把接口返回的模型列出来让你**多选**；勾选的模型保留成列表，之后在面板上挑一个实际调用。若接口不提供 `/models`，会退回一次对话探测并保留手填的模型名。
+- 配置里 `models` 是多选列表、`model` 是当前调用项；旧版配置文件（只有单个 `model`）会被自动迁移成 `models: [model]`，当前模型若不在列表里也会自动补进去。
 - Key 只从剪贴板读入：点「粘贴」把剪贴板内容填进输入框；打开设置页时若输入框为空、剪贴板里像 Key（单行、长度合理），会自动填入等你确认。
 - **没有 Key 也能用**：自动降级为本地规则解析器（`MockAIService`），识别中文数字（「十点」「一点半」）、时间段（「上午九点到十点」取开始时刻）、相对日期（「明天」「下周三」「6月1日」），并把时间词从标题里剥干净。面板右下角圆点显示当前引擎（绿=远端模型，橙=本地规则）。
 - 提示词在 `Sources/AIPrompts.swift`，注入了当前日期时间、时区与星期，用于把相对时间换算成绝对时间；输出契约为严格 JSON。
@@ -96,7 +97,7 @@ Sources/
 | `panel.png` | 面板全态（今天/明天 与日期形式混排、无截止时间置底、已完成沉底、过期标红） |
 | `panel-empty.png` | 空列表态 |
 | `settings.png` | 设置窗全貌（Base URL → 模型提供商 → 模型，Key 保存并测试 / 显示 / 复制） |
-| `model-chooser.png` | 保存 Key 后弹出的可用模型选择框 |
+| `model-chooser.png` | 保存 Key 后弹出的可用模型多选框（全选/清空/完成） |
 
 行为与链路验证：悬停开/合（真实光标移动，`[panel] open pinned=false` → `close`）、快捷键 `RegisterEventHotKey` 返回 true、本地假模型服务器上的真实 HTTP 往返（请求头/模型名/提示词注入日期均核对）、todos.json 落盘回读、错误分支（不可达地址 / 空 Key / 非 JSON），以及用真实系统截图跑通 `ScreenOCRService.recognizeText`。
 

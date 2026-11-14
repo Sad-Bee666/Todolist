@@ -223,15 +223,18 @@ struct TodoPanelView: View {
 
     private var modelMenu: some View {
         Menu {
-            ForEach([AIProvider.deepseek, AIProvider.openai], id: \.self) { provider in
-                Section(provider.displayName) {
-                    ForEach(provider.knownModels, id: \.self) { model in
-                        Button(model) { app.selectModel(provider, model) }
+            let selectable = app.settings.settings.ai.selectableModels
+            if selectable.isEmpty {
+                Text("还没配置模型")
+            } else {
+                ForEach(selectable, id: \.self) { model in
+                    Button(model == app.settings.settings.ai.model ? "✓ " + model : model) {
+                        app.useModel(model)
                     }
                 }
             }
             Divider()
-            Button("自定义 / 更多设置…") { actions.openSettings() }
+            Button("更多设置…") { actions.openSettings() }
         } label: {
             HStack(spacing: 4) {
                 Circle()

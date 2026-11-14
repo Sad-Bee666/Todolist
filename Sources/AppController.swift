@@ -72,17 +72,18 @@ final class AppController: ObservableObject, TodoIngest {
         }
     }
 
-    func selectModel(_ provider: AIProvider, _ model: String) {
-        settings.applyProviderDefaults(provider)
-        settings.settings.ai.model = model
-        if !settings.settings.useRemoteModel {
-            settings.settings.useRemoteModel = true
-        }
+    /// 面板上选择本次调用哪个模型（多选列表里的一个）。
+    func useModel(_ name: String) {
+        var ai = settings.settings.ai
+        ai.model = name
+        if !ai.models.contains(name) { ai.models.append(name) }
+        settings.settings.ai = ai
+        settings.settings.useRemoteModel = true
         refreshKeyPresence()
         if keyPresent {
-            postStatus("已切换到 \(provider.displayName) · \(model)")
+            postStatus("已切换到 " + name)
         } else {
-            postStatus("已选 \(provider.displayName) · \(model)，还缺 \(provider.displayName) 的 API Key", isError: true)
+            postStatus("已选 " + name + "，还缺 " + ai.provider.displayName + " 的 API Key", isError: true)
         }
     }
 

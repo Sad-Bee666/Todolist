@@ -24,10 +24,10 @@ enum SnapshotTool {
             write(settings, size: NSSize(width: 520, height: 640), to: dir.appendingPathComponent("settings.png"))
 
             let chooser = ModelChooser(
-                models: ["deepseek-chat", "deepseek-reasoner"],
-                current: "deepseek-chat",
-                onPick: { _ in }, onCancel: {})
-            write(chooser, size: NSSize(width: 360, height: 320), to: dir.appendingPathComponent("model-chooser.png"))
+                models: ["deepseek-chat", "deepseek-reasoner", "gpt-4o-mini"],
+                selected: .constant(["deepseek-chat", "deepseek-reasoner"]),
+                onCommit: { _ in }, onCancel: {})
+            write(chooser, size: NSSize(width: 380, height: 340), to: dir.appendingPathComponent("model-chooser.png"))
         }
 
         NSLog("[snapshot] written to \(dir.path)")

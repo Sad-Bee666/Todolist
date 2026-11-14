@@ -187,6 +187,10 @@ final class SettingsStore: ObservableObject {
             fixed.ai.baseURL = AIProvider.deepseek.defaultBaseURL
             fixed.ai.model = AIProvider.deepseek.defaultModel
         }
+        var list = fixed.ai.models.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if list.isEmpty { list = [fixed.ai.model] }
+        if !list.contains(fixed.ai.model) { list.insert(fixed.ai.model, at: 0) }
+        fixed.ai.models = list
         return fixed
     }
 

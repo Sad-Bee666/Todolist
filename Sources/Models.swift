@@ -105,17 +105,40 @@ extension AIProvider {
 struct AIConfig: Codable, Equatable {
     var provider: AIProvider
     var baseURL: String
+    /// 当前实际调用的模型。
     var model: String
+    /// 设置页里多选保留的模型，面板上从中挑一个调用。
+    var models: [String]
     var timeout: TimeInterval
 
     init(provider: AIProvider = .deepseek,
          baseURL: String = AIProvider.deepseek.defaultBaseURL,
          model: String = AIProvider.deepseek.defaultModel,
+         models: [String]? = nil,
          timeout: TimeInterval = 60) {
         self.provider = provider
         self.baseURL = baseURL
         self.model = model
+        self.models = models ?? [model]
         self.timeout = timeout
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decodeIfPresent(AIProvider.self, forKey: .provider) ?? .deepseek
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? AIProvider.deepseek.defaultBaseURL
+        let storedModel = try container.decodeIfPresent(String.self, forKey: .model) ?? AIProvider.deepseek.defaultModel
+        model = storedModel
+        let storedModels = try container.decodeIfPresent([String].self, forKey: .models) ?? []
+        models = storedModels.isEmpty ? (storedModel.isEmpty ? [AIProvider.deepseek.defaultModel] : [storedModel]) : storedModels
+        timeout = try container.decodeIfPresent(TimeInterval.self, forKey: .timeout) ?? 60
+    }
+
+    /// 面板可选的模型（列表为空时退回当前模型）。
+    var selectableModels: [String] {
+        let list = models.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if !list.isEmpty { return list }
+        return model.isEmpty ? [] : [model]
     }
 
     /// 归一化到 <base>/chat/completions，base 允许带或不带 /v1。
