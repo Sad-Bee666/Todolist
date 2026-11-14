@@ -67,7 +67,7 @@ struct SettingsView: View {
             HStack(spacing: 8) {
                 Button(testing ? "测试中…" : "测试连接") { runTest() }
                     .disabled(testing || keyDraft.isEmpty)
-                Text(app.keyPresent ? "已保存（优先钥匙串）" : "未配置：当前用本地规则解析")
+                Text(app.keyPresent ? "已保存（本地文件，权限 0600）" : "未配置：当前用本地规则解析")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }

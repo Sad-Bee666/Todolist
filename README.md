@@ -50,7 +50,7 @@ OpenAI 兼容协议（`POST <Base URL>/chat/completions`），三档预设：
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | 自定义 | 自填 | 自填 |
 
-- Key 优先存钥匙串（`com.sad-bee666.todolist` / `api-key-<provider>`），钥匙串不可写时退化为 `~/Library/Application Support/Todolist/secrets/` 下的 0600 文件。
+- Key 存在 `~/Library/Application Support/Todolist/secrets/api-key-<provider>.key`，权限 0600，按预设分开存放。刻意不用钥匙串：ad-hoc 签名的应用每次重建签名都会变，会反复弹授权框。
 - **没有 Key 也能用**：自动降级为本地规则解析器（`MockAIService`），识别中文数字（「十点」「一点半」）、时间段（「上午九点到十点」取开始时刻）、相对日期（「明天」「下周三」「6月1日」），并把时间词从标题里剥干净。面板右下角圆点显示当前引擎（绿=远端模型，橙=本地规则）。
 - 提示词在 `Sources/AIPrompts.swift`，注入了当前日期时间、时区与星期，用于把相对时间换算成绝对时间；输出契约为严格 JSON。
 - 手写填入与截图识别共用同一条抽取管线，提交即解析；解析不出结构时，截图文字会回填到输入框供你改。

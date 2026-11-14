@@ -1,82 +1,40 @@
 import Foundation
-import Security
 
-/// API Key 存储：优先钥匙串；钥匙串不可写时退化为 Application Support 下的 0600 文件。
+/// API Key 存储：0600 权限的本地文件。
+///
+/// 刻意不用钥匙串：ad-hoc 签名的应用每次重新构建签名都会变，钥匙串会弹授权框；
+/// 若无人应答，SecItemCopyMatching 会把主线程卡死，应用连菜单栏图标都出不来。
 enum SecretBox {
-    private static let service = "com.sad-bee666.todolist"
-
-    private static var fallbackDirectory: URL {
+    private static var directory: URL {
         TodoStore.defaultDirectory().appendingPathComponent("secrets", isDirectory: true)
     }
 
-    private static func fallbackURL(account: String) -> URL {
+    private static func url(account: String) -> URL {
         let safe = account.replacingOccurrences(of: "/", with: "_")
-        return fallbackDirectory.appendingPathComponent(safe + ".key")
+        return directory.appendingPathComponent(safe + ".key")
     }
 
     static func load(account: String) -> String? {
-        if let key = keychainLoad(account: account), !key.isEmpty { return key }
-        if let data = try? Data(contentsOf: fallbackURL(account: account)),
-           let text = String(data: data, encoding: .utf8) {
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        return nil
+        guard let data = try? Data(contentsOf: url(account: account)),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     static func save(_ value: String, account: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
+        guard !trimmed.isEmpty else {
             delete(account: account)
             return
         }
-        if keychainSave(trimmed, account: account) {
-            try? FileManager.default.removeItem(at: fallbackURL(account: account))
-            return
-        }
-        try? FileManager.default.createDirectory(at: fallbackDirectory, withIntermediateDirectories: true)
-        let url = fallbackURL(account: account)
-        try? Data(trimmed.utf8).write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let target = url(account: account)
+        try? Data(trimmed.utf8).write(to: target, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)
     }
 
     static func delete(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
-        try? FileManager.default.removeItem(at: fallbackURL(account: account))
-    }
-
-    private static func keychainLoad(account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        return text
-    }
-
-    private static func keychainSave(_ value: String, account: String) -> Bool {
-        let data = Data(value.utf8)
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(base as CFDictionary)
-        var attributes = base
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+        try? FileManager.default.removeItem(at: url(account: account))
     }
 
     /// 每个 provider 独立存一个 Key，切换预设不互相覆盖。
