@@ -144,8 +144,13 @@ final class AppController: ObservableObject, TodoIngest {
                 self.postStatus("正在识别文字…")
                 let text = try await self.ocr.recognizeText(in: image)
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                NSLog("[capture] ocr_chars=%d", trimmed.count)
                 guard !trimmed.isEmpty else {
-                    self.postStatus("截图里没有识别到文字", isError: true)
+                    if ScreenOCRService.isLikelyBlank(image) {
+                        self.postStatus("截到的是空白图，说明屏幕录制权限没生效：系统设置 → 隐私与安全性 → 屏幕录制 里重新勾选 Todolist，退出并重开应用", isError: true)
+                    } else {
+                        self.postStatus("截图里没有识别到文字", isError: true)
+                    }
                     return
                 }
                 let added = try await self.extractAndStoreReturningCount(text: trimmed, source: .screenshot)
@@ -242,6 +247,27 @@ final class AppController: ObservableObject, TodoIngest {
             return "连接成功（\(config.model)）：\n\(preview)"
         } catch {
             return "连接失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 自检：整屏抓一张，报告尺寸 / 是否空白 / 识别到多少字，用来判断权限是否真的生效。
+    func diagnoseCapture() async -> String {
+        guard ScreenCapturePermission.isGranted else {
+            return "未授权：系统设置 → 隐私与安全性 → 屏幕录制 里勾选 Todolist，退出并重开应用"
+        }
+        let service = ScreenOCRService()
+        service.captureArguments = ["-x", "-m"]
+        do {
+            let image = try await service.captureRegionImage()
+            let blank = ScreenOCRService.isLikelyBlank(image)
+            let text = try await service.recognizeText(in: image)
+            let chars = text.trimmingCharacters(in: .whitespacesAndNewlines).count
+            let blankText = blank ? "是" : "否"
+            return "截图 " + String(image.width) + "×" + String(image.height)
+                + "，空白图=" + blankText
+                + "，识别到 " + String(chars) + " 个字符"
+        } catch {
+            return "截图失败：" + error.localizedDescription
         }
     }
 

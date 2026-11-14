@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var showModelChooser: Bool = false
     @State private var selectedModels: Set<String> = []
     @State private var screenGranted: Bool = ScreenCapturePermission.isGranted
+    @State private var captureDiagnostic: String?
 
     private var providerBinding: Binding<AIProvider> {
         Binding(
@@ -178,8 +179,21 @@ struct SettingsView: View {
                     .foregroundColor(screenGranted ? .green : .red)
                 Button("请求权限") { screenGranted = ScreenCapturePermission.request() }
                 Button("重新检测") { screenGranted = ScreenCapturePermission.isGranted }
+                Button("测试截图") {
+                    captureDiagnostic = "正在抓一张整屏…"
+                    Task { @MainActor in
+                        captureDiagnostic = await app.diagnoseCapture()
+                    }
+                }
                 Button("打开系统设置") { ScreenCapturePermission.openSystemSettings() }
                 Spacer()
+            }
+            if let captureDiagnostic {
+                Text(captureDiagnostic)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 Button("导入桌面最近截图") { app.importLatestScreenshot() }

@@ -38,6 +38,29 @@ final class ScreenOCRService: OCRServicing {
         return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
+    static func image(from data: Data) -> CGImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
+    /// 近乎纯色的图基本等于「没拿到真实画面」（权限失效时截出来就是黑图）。
+    static func isLikelyBlank(_ image: CGImage) -> Bool {
+        let side = 32
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        guard let context = CGContext(
+            data: &pixels,
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bytesPerRow: side,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return false }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let minValue = pixels.min(), let maxValue = pixels.max() else { return false }
+        return Int(maxValue) - Int(minValue) < 8
+    }
+
     func captureRegionImage() async throws -> CGImage {
         let directory = ScreenOCRService.captureDirectory()
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -46,18 +69,17 @@ final class ScreenOCRService: OCRServicing {
 
         let stderr = try await Self.runScreencapture(arguments: captureArguments, to: url)
 
-        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-        let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
-        guard size > 0 else {
+        // 一次性读成内存数据再解码：避免「先查大小、再读盘」之间文件消失的竞态
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
             if Self.looksLikePermissionDenial(stderr) {
                 throw TodoServiceError.ocrFailed("没有屏幕录制权限：系统设置 → 隐私与安全性 → 屏幕录制 里勾选 Todolist，然后重开应用")
             }
             throw TodoServiceError.captureCancelled
         }
-
-        guard let image = ScreenOCRService.image(at: url) else {
-            throw TodoServiceError.ocrFailed("截图解码失败：\(url.lastPathComponent)")
+        guard let image = ScreenOCRService.image(from: data) else {
+            throw TodoServiceError.ocrFailed("截图解码失败（\(data.count) 字节）")
         }
+        NSLog("[capture] %dx%d %d bytes", image.width, image.height, data.count)
         return image
     }
 
