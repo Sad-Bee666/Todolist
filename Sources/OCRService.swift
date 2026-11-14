@@ -2,26 +2,60 @@ import Foundation
 import CoreGraphics
 import ImageIO
 import Vision
+import AppKit
+
+/// 屏幕录制权限：必须由应用自己申请，否则子进程 screencapture 会被 TCC 静默拒绝。
+enum ScreenCapturePermission {
+    static var isGranted: Bool { CGPreflightScreenCaptureAccess() }
+
+    /// 首次调用会弹出系统授权框；用户在系统设置里勾选后通常需重开应用才生效。
+    @discardableResult
+    static func request() -> Bool {
+        if CGPreflightScreenCaptureAccess() { return true }
+        return CGRequestScreenCaptureAccess()
+    }
+
+    static func openSystemSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        if let url { NSWorkspace.shared.open(url) }
+    }
+}
 
 /// 屏幕框选 + Vision 文字识别。截图交给系统 screencapture，因此不需要辅助功能权限。
 final class ScreenOCRService: OCRServicing {
 
     private static let screencapturePath = "/usr/sbin/screencapture"
 
+    /// 截取参数；自检时可替换成 -R 固定区域。
+    var captureArguments: [String] = ["-i", "-x"]
+
+    static func captureDirectory() -> URL {
+        TodoStore.defaultDirectory().appendingPathComponent("captures", isDirectory: true)
+    }
+
+    static func image(at url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
     func captureRegionImage() async throws -> CGImage {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("todolist-capture-\(UUID().uuidString).png")
+        let directory = ScreenOCRService.captureDirectory()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("capture-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try await Self.runScreencapture(to: url)
+        let stderr = try await Self.runScreencapture(arguments: captureArguments, to: url)
 
-        // 用户按 Esc 取消时不会留下文件，个别系统版本会留一个 0 字节空文件
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes?[.size] as? NSNumber)?.intValue ?? 0
-        guard size > 0 else { throw TodoServiceError.captureCancelled }
+        guard size > 0 else {
+            if Self.looksLikePermissionDenial(stderr) {
+                throw TodoServiceError.ocrFailed("没有屏幕录制权限：系统设置 → 隐私与安全性 → 屏幕录制 里勾选 Todolist，然后重开应用")
+            }
+            throw TodoServiceError.captureCancelled
+        }
 
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        guard let image = ScreenOCRService.image(at: url) else {
             throw TodoServiceError.ocrFailed("截图解码失败：\(url.lastPathComponent)")
         }
         return image
@@ -46,15 +80,34 @@ final class ScreenOCRService: OCRServicing {
 
     // MARK: - 私有
 
-    /// 阻塞到用户完成框选或按 Esc；退出码不直接决定结果，由调用方按产物判断。
-    private static func runScreencapture(to url: URL) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+    private static func looksLikePermissionDenial(_ stderr: String) -> Bool {
+        let text = stderr.lowercased()
+        return text.contains("not authorized")
+            || text.contains("cannot capture")
+            || text.contains("could not create image")
+            || text.contains("denied")
+    }
+
+    /// 返回进程的 stderr，便于区分「用户取消」与「权限被拒」。
+    private static func runScreencapture(arguments: [String], to url: URL) async throws -> String {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: screencapturePath)
-            process.arguments = ["-i", "-x", "-t", "png", url.path]
-            process.standardError = FileHandle.nullDevice
+            process.arguments = arguments + ["-t", "png", url.path]
+
+            let pipe = Pipe()
+            process.standardError = pipe
             process.standardOutput = FileHandle.nullDevice
-            process.terminationHandler = { _ in continuation.resume() }
+
+            process.terminationHandler = { finished in
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let text = String(data: data, encoding: .utf8) ?? ""
+                if finished.terminationStatus != 0 && text.isEmpty {
+                    continuation.resume(returning: "screencapture 退出码 \(finished.terminationStatus)")
+                } else {
+                    continuation.resume(returning: text)
+                }
+            }
             do {
                 try process.run()
             } catch {

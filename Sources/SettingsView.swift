@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var availableModels: [String] = []
     @State private var showModelChooser: Bool = false
     @State private var selectedModels: Set<String> = []
+    @State private var screenGranted: Bool = ScreenCapturePermission.isGranted
 
     private var providerBinding: Binding<AIProvider> {
         Binding(
@@ -47,6 +48,7 @@ struct SettingsView: View {
         }
         .frame(width: 520, height: 640)
         .onAppear {
+            screenGranted = ScreenCapturePermission.isGranted
             reloadKey()
             autoFillFromPasteboard()
             if app.keyPresent { refreshModels(showError: false) }
@@ -169,7 +171,22 @@ struct SettingsView: View {
                 }
                 Spacer()
             }
-            Text("按下快捷键后框选屏幕区域，本机 Vision 完成取字。首次截图 macOS 会要求「屏幕录制」权限，请到 系统设置 → 隐私与安全性 → 屏幕录制 里勾选 Todolist 并重开本应用。")
+            HStack(spacing: 8) {
+                Text("屏幕录制权限").font(.system(size: 12))
+                Text(screenGranted ? "已授权" : "未授权")
+                    .font(.system(size: 11))
+                    .foregroundColor(screenGranted ? .green : .red)
+                Button("请求权限") { screenGranted = ScreenCapturePermission.request() }
+                Button("重新检测") { screenGranted = ScreenCapturePermission.isGranted }
+                Button("打开系统设置") { ScreenCapturePermission.openSystemSettings() }
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Button("导入桌面最近截图") { app.importLatestScreenshot() }
+                    .help("按 ⇧⌘4 用系统截图，再点这里导入；这条路不需要屏幕录制权限")
+                Spacer()
+            }
+            Text("⌃⌥T 走系统 screencapture，需要屏幕录制授权：先点「请求权限」，或到 系统设置 → 隐私与安全性 → 屏幕录制 勾选 Todolist 后重开应用。重新构建会导致签名变化、授权失效，需要重新勾选。")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

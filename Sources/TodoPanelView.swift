@@ -6,6 +6,7 @@ struct PanelActions {
     var toggleDone: (UUID) -> Void
     var deleteItem: (UUID) -> Void
     var startCapture: () -> Void
+    var importScreenshot: () -> Void
     var openSettings: () -> Void
     var clearCompleted: () -> Void
     var quit: () -> Void
@@ -88,6 +89,9 @@ struct TodoPanelView: View {
             Button { actions.openSettings() } label: { Image(systemName: "gearshape") }
                 .buttonStyle(.plain).foregroundColor(.secondary).help("设置")
             Menu {
+                Button("导入最近截图") { actions.importScreenshot() }
+                Button("屏幕录制权限…") { ScreenCapturePermission.openSystemSettings() }
+                Divider()
                 Button("清除已完成") { actions.clearCompleted() }
                 Button("打开数据文件夹") {
                     NSWorkspace.shared.activateFileViewerSelecting([TodoStore.defaultDirectory()])

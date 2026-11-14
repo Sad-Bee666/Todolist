@@ -41,6 +41,16 @@ final class AppController: ObservableObject, TodoIngest {
         onHidePanel = { [weak self] in self?.statusController?.closePanel() }
         statusController?.install()
 
+        // 未授权时主动申请一次（ad-hoc 签名重建后授权会失效，这里能自动补回）
+        if !ScreenCapturePermission.isGranted {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                if !ScreenCapturePermission.isGranted {
+                    let granted = ScreenCapturePermission.request()
+                    NSLog("[app] screen capture permission granted=\(granted)")
+                }
+            }
+        }
+
         hotKey.handler = { [weak self] in self?.beginCaptureFromHotKey() }
         let registered = hotKey.register(settings.settings.hotkey)
         NSLog("[app] hotkey registered=%@ spec=%@", registered ? "true" : "false", settings.settings.hotkey.display)
@@ -93,6 +103,7 @@ final class AppController: ObservableObject, TodoIngest {
             toggleDone: { [weak self] id in self?.store.toggleDone(id: id) },
             deleteItem: { [weak self] id in self?.store.remove(id: id) },
             startCapture: { [weak self] in self?.beginCapture() },
+            importScreenshot: { [weak self] in self?.importLatestScreenshot() },
             openSettings: { [weak self] in self?.openSettings() },
             clearCompleted: { [weak self] in self?.store.clearCompleted() },
             quit: { NSApp.terminate(nil) }
@@ -127,6 +138,11 @@ final class AppController: ObservableObject, TodoIngest {
 
     func beginCapture() {
         guard !isBusy else { return }
+        if !ScreenCapturePermission.isGranted && !ScreenCapturePermission.request() {
+            postStatus("没有屏幕录制权限。去「系统设置 → 隐私与安全性 → 屏幕录制」勾选 Todolist 并重开应用；或用 ⇧⌘4 截图后点「导入最近截图」", isError: true)
+            ScreenCapturePermission.openSystemSettings()
+            return
+        }
         isBusy = true
         onHidePanel?()
         Task { @MainActor in
@@ -236,6 +252,63 @@ final class AppController: ObservableObject, TodoIngest {
             return "连接成功（\(config.model)）：\n\(preview)"
         } catch {
             return "连接失败：\(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - 导入系统截图（不需要屏幕录制权限）
+
+    /// 桌面里最近的一张系统截图（⇧⌘4 / ⇧⌘5 的产物）。
+    static func newestSystemScreenshot() -> URL? {
+        let fm = FileManager.default
+        guard let desktop = fm.urls(for: .desktopDirectory, in: .userDomainMask).first else { return nil }
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey]
+        let files = (try? fm.contentsOfDirectory(at: desktop, includingPropertiesForKeys: Array(keys), options: [.skipsHiddenFiles])) ?? []
+        let prefixes = ["屏幕快照", "Screenshot", "截屏", "截圖", "スクリーンショット"]
+        let candidates = files.filter { url in
+            let ext = url.pathExtension.lowercased()
+            guard ["png", "jpg", "jpeg", "heic", "tiff"].contains(ext) else { return false }
+            let name = url.lastPathComponent
+            return prefixes.contains { name.hasPrefix($0) }
+        }
+        return candidates.max { lhs, rhs in
+            let l = (try? lhs.resourceValues(forKeys: keys).contentModificationDate) ?? .distantPast
+            let r = (try? rhs.resourceValues(forKeys: keys).contentModificationDate) ?? .distantPast
+            return l < r
+        }
+    }
+
+    /// 用系统截图工具（⇧⌘4）产出的文件走同一条 OCR + 解析管线，绕开屏幕录制权限。
+    func importLatestScreenshot() {
+        guard !isBusy else { return }
+        guard let url = AppController.newestSystemScreenshot() else {
+            postStatus("桌面没找到系统截图。按 ⇧⌘4 截一张，再点这里", isError: true)
+            return
+        }
+        Task { @MainActor in
+            self.isBusy = true
+            defer { self.isBusy = false }
+            self.postStatus("正在识别 " + url.lastPathComponent + "…")
+            guard let image = ScreenOCRService.image(at: url) else {
+                self.postStatus("读不了这张图：" + url.lastPathComponent, isError: true)
+                return
+            }
+            do {
+                let text = try await self.ocr.recognizeText(in: image)
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    self.postStatus("这张截图里没有识别到文字", isError: true)
+                    return
+                }
+                let added = try await self.extractAndStoreReturningCount(text: trimmed, source: .screenshot)
+                if added == 0 {
+                    self.statusController?.openPanel(pinned: true)
+                    self.postStatus("没解析出结构，识别到的文字已填进输入框", isError: true)
+                    NotificationCenter.default.post(
+                        name: .todoPanelFillDraft, object: nil, userInfo: ["text": trimmed])
+                }
+            } catch {
+                self.postStatus(error.localizedDescription, isError: true)
+            }
         }
     }
 
