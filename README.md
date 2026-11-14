@@ -13,9 +13,22 @@ MIT License · 无第三方依赖 · 纯 Swift / AppKit + SwiftUI
 ## 从源码构建
 
 ```bash
-./build.sh     # 产出 dist/Todolist.app（含 ad-hoc 本地签名）
-./install.sh   # 复制到 ~/Applications 并启动
-./package.sh   # 产出 dist/Todolist-x.y.z.dmg
+./scripts/setup-signing.sh   # 一次性：创建本地 code signing 证书（见下）
+./build.sh                   # 产出 dist/Todolist.app（有证书就用证书签名）
+./install.sh                 # 复制到 ~/Applications 并启动
+./package.sh                 # 产出 dist/Todolist-x.y.z.dmg
+```
+
+### 为什么需要本地签名证书
+
+ad-hoc 签名（`codesign -s -`）的 designated requirement 只有 `cdhash H"…"`，**每次重新构建 cdhash 都会变**，TCC 里已授予的「屏幕录制」权限随即匹配不上，表现为「明明勾了还是反复申请」。用一张固定的自签证书签名后，requirement 变成 `identifier "com.sad-bee666.todolist" and certificate root = H"…"`，重新构建不再失效。
+
+`scripts/setup-signing.sh` 会在登录钥匙串里生成一张仅用于 code signing 的自签证书（`Todolist Local Signing`）并加入用户信任。它是一条**代码签名信任锚**：谁拿到这把私钥，就能签出你这台 Mac 信任的程序。不需要时可彻底移除：
+
+```bash
+security find-identity -v -p codesigning | grep "Todolist Local Signing"
+security delete-identity -c "Todolist Local Signing"          # 删身份
+security remove-trusted-cert -d <导出的 cert.pem>              # 撤销信任（需导出证书）
 ```
 
 推送 `v*` 形式的 tag 会触发 GitHub Actions 自动构建并上传 DMG 到 Release。

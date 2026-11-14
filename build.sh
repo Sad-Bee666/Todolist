@@ -27,7 +27,16 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$BUILD_DIR/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-echo "==> ad-hoc 签名"
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "警告：签名失败，仍可直接运行"
+IDENTITY="Todolist Local Signing"
+echo "==> 签名"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
+  codesign --force --deep --sign "$IDENTITY" "$APP" || {
+    echo "警告：本地证书签名失败，退回 ad-hoc"
+    codesign --force --deep --sign - "$APP" || echo "警告：ad-hoc 签名也失败"
+  }
+else
+  echo "（未找到本地证书，使用 ad-hoc：TCC 授权会在每次重建后失效）"
+  codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || echo "警告：签名失败，仍可直接运行"
+fi
 
 echo "==> 完成：$APP"

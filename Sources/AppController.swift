@@ -41,16 +41,6 @@ final class AppController: ObservableObject, TodoIngest {
         onHidePanel = { [weak self] in self?.statusController?.closePanel() }
         statusController?.install()
 
-        // 未授权时主动申请一次（ad-hoc 签名重建后授权会失效，这里能自动补回）
-        if !ScreenCapturePermission.isGranted {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                if !ScreenCapturePermission.isGranted {
-                    let granted = ScreenCapturePermission.request()
-                    NSLog("[app] screen capture permission granted=\(granted)")
-                }
-            }
-        }
-
         hotKey.handler = { [weak self] in self?.beginCaptureFromHotKey() }
         let registered = hotKey.register(settings.settings.hotkey)
         NSLog("[app] hotkey registered=%@ spec=%@", registered ? "true" : "false", settings.settings.hotkey.display)
