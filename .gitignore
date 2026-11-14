@@ -1,0 +1,10 @@
+# 构建产物
+build/
+dist/
+.cache/
+
+# 本地验证脚本与截图草稿
+scratch/
+
+# macOS
+.DS_Store
