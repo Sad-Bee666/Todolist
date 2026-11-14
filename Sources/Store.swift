@@ -162,7 +162,11 @@ final class SettingsStore: ObservableObject {
 
         if let data = try? Data(contentsOf: fileURL),
            let decoded = try? JSONDecoder().decode(AppSettings.self, from: data) {
-            self.settings = decoded
+            let fixed = SettingsStore.sanitized(decoded)
+            self.settings = fixed
+            if fixed != decoded, let repaired = try? encoder.encode(fixed) {
+                try? repaired.write(to: fileURL, options: .atomic)
+            }
         } else {
             self.settings = AppSettings()
         }
@@ -171,6 +175,19 @@ final class SettingsStore: ObservableObject {
     private func persist() {
         guard let data = try? encoder.encode(settings) else { return }
         try? data.write(to: fileURL, options: .atomic)
+    }
+
+    /// 空的 Base URL / 模型名无法路由，会让界面显示失真；回落到 DeepSeek 预设。
+    static func sanitized(_ value: AppSettings) -> AppSettings {
+        var fixed = value
+        let base = fixed.ai.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = fixed.ai.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.isEmpty || model.isEmpty {
+            fixed.ai.provider = .deepseek
+            fixed.ai.baseURL = AIProvider.deepseek.defaultBaseURL
+            fixed.ai.model = AIProvider.deepseek.defaultModel
+        }
+        return fixed
     }
 
     func applyProviderDefaults(_ provider: AIProvider) {
