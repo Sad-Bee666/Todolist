@@ -53,6 +53,8 @@ OpenAI 兼容协议（`POST <Base URL>/chat/completions`），三档预设：
 | 自定义 | 自填 | 自填 |
 
 - Key 存在 `~/Library/Application Support/Todolist/secrets/api-key-<provider>.key`，权限 0600，按预设分开存放。刻意不用钥匙串：ad-hoc 签名的应用每次重建签名都会变，会反复弹授权框。
+- 设置页顺序：Base URL → 模型提供商 → 模型。点「保存并测试」会请求 `GET <Base URL>/models`：既验证连通性，也把接口返回的模型列出来弹窗让你选；若接口不提供 `/models`，会退回一次对话探测并保留手填的模型名。
+- Key 输入框可「显示」后选中复制，也有独立的「复制」按钮（复制已保存的 Key 到剪贴板）。
 - **没有 Key 也能用**：自动降级为本地规则解析器（`MockAIService`），识别中文数字（「十点」「一点半」）、时间段（「上午九点到十点」取开始时刻）、相对日期（「明天」「下周三」「6月1日」），并把时间词从标题里剥干净。面板右下角圆点显示当前引擎（绿=远端模型，橙=本地规则）。
 - 提示词在 `Sources/AIPrompts.swift`，注入了当前日期时间、时区与星期，用于把相对时间换算成绝对时间；输出契约为严格 JSON。
 - 手写填入与截图识别共用同一条抽取管线，提交即解析；解析不出结构时，截图文字会回填到输入框供你改。
@@ -93,7 +95,8 @@ Sources/
 | --- | --- |
 | `panel.png` | 面板全态（今天/明天 与日期形式混排、无截止时间置底、已完成沉底、过期标红） |
 | `panel-empty.png` | 空列表态 |
-| `settings.png` | 设置窗全貌 |
+| `settings.png` | 设置窗全貌（Base URL → 模型提供商 → 模型，Key 保存并测试 / 显示 / 复制） |
+| `model-chooser.png` | 保存 Key 后弹出的可用模型选择框 |
 
 行为与链路验证：悬停开/合（真实光标移动，`[panel] open pinned=false` → `close`）、快捷键 `RegisterEventHotKey` 返回 true、本地假模型服务器上的真实 HTTP 往返（请求头/模型名/提示词注入日期均核对）、todos.json 落盘回读、错误分支（不可达地址 / 空 Key / 非 JSON），以及用真实系统截图跑通 `ScreenOCRService.recognizeText`。
 

@@ -6,13 +6,28 @@ struct SettingsView: View {
     @ObservedObject var settings: SettingsStore
 
     @State private var keyDraft: String = ""
-    @State private var testResult: String?
-    @State private var testing = false
+    @State private var showKey: Bool = false
+    @State private var testing: Bool = false
+    @State private var fetching: Bool = false
+    @State private var probeMessage: String?
+    @State private var availableModels: [String] = []
+    @State private var showModelChooser: Bool = false
 
     private var providerBinding: Binding<AIProvider> {
         Binding(
             get: { settings.settings.ai.provider },
-            set: { settings.applyProviderDefaults($0); reloadKey() }
+            set: { newValue in
+                settings.applyProviderDefaults(newValue)
+                availableModels = []
+                reloadKey()
+            }
+        )
+    }
+
+    private var modelBinding: Binding<String> {
+        Binding(
+            get: { settings.settings.ai.model },
+            set: { settings.settings.ai.model = $0 }
         )
     }
 
@@ -29,50 +44,109 @@ struct SettingsView: View {
             }
             .padding(18)
         }
-        .frame(width: 520, height: 620)
-        .onAppear { reloadKey() }
-        .onChange(of: settings.settings.ai.provider) { _ in reloadKey() }
+        .frame(width: 520, height: 640)
+        .onAppear {
+            reloadKey()
+            if app.keyPresent { refreshModels(showError: false) }
+        }
+        .onChange(of: settings.settings.ai.provider) { _ in
+            availableModels = []
+            reloadKey()
+        }
+        .sheet(isPresented: $showModelChooser) {
+            ModelChooser(
+                models: availableModels,
+                current: settings.settings.ai.model,
+                onPick: { picked in
+                    settings.settings.ai.model = picked
+                    probeMessage = "已选用 \(picked)"
+                    showModelChooser = false
+                },
+                onCancel: { showModelChooser = false }
+            )
+        }
     }
+
+    // MARK: - 接口
 
     private var aiSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("AI 接口").font(.headline)
-            Picker("预设", selection: providerBinding) {
-                ForEach(AIProvider.allCases) { provider in
-                    Text(provider.displayName).tag(provider)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
 
             labeledField("Base URL", text: $settings.settings.ai.baseURL, placeholder: "https://api.deepseek.com/v1")
-            labeledField("模型", text: $settings.settings.ai.model, placeholder: "deepseek-chat")
-            Text("协议为 OpenAI 兼容（POST <Base URL>/chat/completions）。DeepSeek 与 OpenAI 已内置预设；其它厂商选「自定义」后自行填写 Base URL 与模型名。")
+
+            HStack(spacing: 8) {
+                Text("模型提供商").font(.system(size: 12)).frame(width: 68, alignment: .leading)
+                Picker("", selection: providerBinding) {
+                    ForEach(AIProvider.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 220)
+                Spacer()
+            }
+
+            HStack(spacing: 8) {
+                Text("模型").font(.system(size: 12)).frame(width: 68, alignment: .leading)
+                if availableModels.isEmpty {
+                    TextField("deepseek-chat", text: modelBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                } else {
+                    Picker("", selection: modelBinding) {
+                        ForEach(availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 220)
+                }
+                Button(fetching ? "获取中…" : "获取可用模型") { refreshModels(showError: true) }
+                    .disabled(fetching || keyDraft.isEmpty)
+                Spacer()
+            }
+
+            Text("协议为 OpenAI 兼容（POST <Base URL>/chat/completions）。保存 Key 时会自动测试连通性，并列出该接口返回的模型供你选择。")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    // MARK: - Key
+
     private var keySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("API Key").font(.headline)
             HStack(spacing: 6) {
-                SecureField("sk-…", text: $keyDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                Button("保存") { saveKey() }
+                Group {
+                    if showKey {
+                        TextField("sk-…", text: $keyDraft)
+                    } else {
+                        SecureField("sk-…", text: $keyDraft)
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+
+                Button(showKey ? "隐藏" : "显示") { showKey.toggle() }
+                    .help("显示后可选中复制")
+                Button(testing ? "测试中…" : "保存并测试") { saveAndTest() }
+                    .disabled(testing)
+                Button("复制") { copyKey() }
                 Button("删除") { deleteKey() }
             }
             HStack(spacing: 8) {
-                Button(testing ? "测试中…" : "测试连接") { runTest() }
-                    .disabled(testing || keyDraft.isEmpty)
                 Text(app.keyPresent ? "已保存（本地文件，权限 0600）" : "未配置：当前用本地规则解析")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                Spacer()
             }
-            if let testResult {
-                Text(testResult)
+            if let probeMessage {
+                Text(probeMessage)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -80,6 +154,8 @@ struct SettingsView: View {
             }
         }
     }
+
+    // MARK: - 快捷键 / 行为
 
     private var hotkeySection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -124,6 +200,8 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 动作
+
     private func labeledField(_ title: String, text: Binding<String>, placeholder: String) -> some View {
         HStack(spacing: 8) {
             Text(title).font(.system(size: 12)).frame(width: 68, alignment: .leading)
@@ -138,28 +216,101 @@ struct SettingsView: View {
         app.refreshKeyPresence()
     }
 
-    private func saveKey() {
-        SecretBox.save(keyDraft, account: SecretBox.account(for: settings.settings.ai.provider))
-        app.refreshKeyPresence()
-        testResult = keyDraft.isEmpty ? "已清空 Key" : "已保存"
+    private func copyKey() {
+        if app.copyKeyToPasteboard() {
+            probeMessage = "已复制到剪贴板"
+        } else if !keyDraft.isEmpty {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(keyDraft, forType: .string)
+            probeMessage = "已复制输入框内容"
+        } else {
+            probeMessage = "还没有可复制的 Key"
+        }
     }
 
     private func deleteKey() {
         SecretBox.delete(account: SecretBox.account(for: settings.settings.ai.provider))
         keyDraft = ""
+        availableModels = []
         app.refreshKeyPresence()
-        testResult = "已删除 Key"
+        probeMessage = "已删除 Key"
     }
 
-    private func runTest() {
+    private func saveAndTest() {
         SecretBox.save(keyDraft, account: SecretBox.account(for: settings.settings.ai.provider))
         app.refreshKeyPresence()
-        testing = true
-        testResult = nil
-        Task { @MainActor in
-            let result = await app.testAIConnection()
-            testResult = result
-            testing = false
+        guard !keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            probeMessage = "已清空 Key"
+            return
         }
+        testing = true
+        probeMessage = "正在测试连通性…"
+        Task { @MainActor in
+            let result = await app.probeConnection()
+            testing = false
+            probeMessage = result.message
+            availableModels = result.models
+            if !result.models.isEmpty {
+                showModelChooser = true
+            }
+        }
+    }
+
+    private func refreshModels(showError: Bool) {
+        guard app.keyPresent else { return }
+        fetching = true
+        Task { @MainActor in
+            let result = await app.probeConnection()
+            fetching = false
+            if !result.models.isEmpty {
+                availableModels = result.models
+                probeMessage = result.message
+                if !result.models.contains(settings.settings.ai.model) && showError {
+                    showModelChooser = true
+                }
+            } else if showError {
+                probeMessage = result.message
+            }
+        }
+    }
+}
+
+struct ModelChooser: View {
+    let models: [String]
+    let current: String
+    let onPick: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("选择模型").font(.headline)
+            Text("该接口返回 \(models.count) 个可用模型，选一个作为解析待办的默认模型。")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(models, id: \.self) { model in
+                        Button { onPick(model) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: model == current ? "checkmark.circle.fill" : "circle")
+                                    .foregroundColor(model == current ? .accentColor : .secondary)
+                                Text(model).font(.system(size: 12))
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                            .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(height: 180)
+            HStack {
+                Spacer()
+                Button("取消", action: onCancel)
+            }
+        }
+        .padding(18)
+        .frame(width: 360)
     }
 }

@@ -127,6 +127,14 @@ struct AIConfig: Codable, Equatable {
         return URL(string: base + "/chat/completions")
     }
 
+    /// 归一化到 <base>/models，用于拉取可用模型并顺带验证连通性。
+    func modelsURL() -> URL? {
+        var base = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        while base.hasSuffix("/") { base.removeLast() }
+        guard !base.isEmpty else { return nil }
+        return URL(string: base + "/models")
+    }
+
     var isRoutable: Bool {
         chatCompletionsURL() != nil && !model.trimmingCharacters(in: .whitespaces).isEmpty
     }

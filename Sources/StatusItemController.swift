@@ -12,8 +12,13 @@ final class StatusItemController: NSObject {
     private var localKeyMonitor: Any?
     private var pinned = false
     private var hoverExitAt: Date?
+    /// 菜单（模型下拉等）打开期间不按悬停收起面板：菜单是独立窗口，不在图标/面板矩形内。
+    private var isTrackingMenu = false
 
     var onWillOpen: (() -> Void)?
+
+    /// 供自检使用：面板当前是否展开。
+    var isPanelVisible: Bool { popover.isShown }
 
     init(contentViewController: NSViewController,
          hoverEnabled: @escaping () -> Bool,
@@ -42,6 +47,10 @@ final class StatusItemController: NSObject {
         startHoverTimer()
         installClickMonitor()
         installKeyMonitor()
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(menuBeganTracking), name: NSMenu.didBeginTrackingNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(menuEndedTracking), name: NSMenu.didEndTrackingNotification, object: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             if let frame = self?.statusButtonScreenFrame() {
                 NSLog("[panel] statusFrame=%.1f,%.1f,%.1f,%.1f",
@@ -109,6 +118,10 @@ final class StatusItemController: NSObject {
             return
         }
 
+        if isTrackingMenu {
+            hoverExitAt = nil
+            return
+        }
         if pinned { return }
 
         let panelFrame = popover.contentViewController?.view.window?.frame
@@ -123,6 +136,8 @@ final class StatusItemController: NSObject {
             hoverExitAt = Date()
         }
     }
+
+    var statusButtonScreenFrameForTesting: NSRect? { statusButtonScreenFrame() }
 
     private func statusButtonScreenFrame() -> NSRect? {
         guard let button = statusItem.button, let window = button.window else { return nil }
@@ -153,7 +168,18 @@ final class StatusItemController: NSObject {
         }
     }
 
+    @objc private func menuBeganTracking() {
+        isTrackingMenu = true
+        hoverExitAt = nil
+    }
+
+    @objc private func menuEndedTracking() {
+        isTrackingMenu = false
+        hoverExitAt = Date()
+    }
+
     deinit {
+        NotificationCenter.default.removeObserver(self)
         hoverTimer?.invalidate()
         if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
         if let localKeyMonitor { NSEvent.removeMonitor(localKeyMonitor) }

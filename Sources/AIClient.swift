@@ -70,6 +70,36 @@ final class OpenAICompatibleAIClient: AIServicing {
 
     /// 解析模型返回的 content：先剥代码围栏，再解 {"todos":[…]}。
     /// 单条 deadline 解析失败只置 nil，不丢弃整条待办；title 为空的条目丢弃。
+    /// GET <base>/models：既取可用模型，也当连通性探测。
+    func listModels(config: AIConfig, apiKey: String) async throws -> [String] {
+        guard !apiKey.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw TodoServiceError.notConfigured("API Key 未填写")
+        }
+        guard let url = config.modelsURL() else {
+            throw TodoServiceError.notConfigured("接口地址无效")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = min(config.timeout, 30)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw TodoServiceError.network("无 HTTP 响应")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
+            throw TodoServiceError.network("HTTP \(http.statusCode) \(body)")
+        }
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = root["data"] as? [[String: Any]] else {
+            throw TodoServiceError.decode("响应里没有 data 数组")
+        }
+        let ids = list.compactMap { $0["id"] as? String }.sorted()
+        guard !ids.isEmpty else { throw TodoServiceError.decode("模型列表为空") }
+        return ids
+    }
+
     func parseTodos(from content: String) throws -> [ParsedTodo] {
         let json = strippingCodeFence(content)
         guard let data = json.data(using: .utf8) else {

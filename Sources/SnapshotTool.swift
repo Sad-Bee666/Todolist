@@ -21,7 +21,13 @@ enum SnapshotTool {
             write(empty, size: NSSize(width: 380, height: 520), to: dir.appendingPathComponent("panel-empty.png"))
 
             let settings = SettingsView(app: app, settings: app.settings)
-            write(settings, size: NSSize(width: 520, height: 620), to: dir.appendingPathComponent("settings.png"))
+            write(settings, size: NSSize(width: 520, height: 640), to: dir.appendingPathComponent("settings.png"))
+
+            let chooser = ModelChooser(
+                models: ["deepseek-chat", "deepseek-reasoner"],
+                current: "deepseek-chat",
+                onPick: { _ in }, onCancel: {})
+            write(chooser, size: NSSize(width: 360, height: 320), to: dir.appendingPathComponent("model-chooser.png"))
         }
 
         NSLog("[snapshot] written to \(dir.path)")

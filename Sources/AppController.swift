@@ -177,6 +177,36 @@ final class AppController: ObservableObject, TodoIngest {
         return added
     }
 
+    /// 保存 Key 后的连通性测试：优先 /models（顺带拿到可用模型），失败再退回一次对话探测。
+    func probeConnection() async -> (models: [String], message: String) {
+        let config = settings.settings.ai
+        let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
+        guard !key.isEmpty else { return ([], "还没填 API Key") }
+        guard config.isRoutable else { return ([], "Base URL 或模型名不合法") }
+
+        do {
+            let models = try await remoteAI.listModels(config: config, apiKey: key)
+            return (models, "连通正常，该接口返回 \(models.count) 个可用模型")
+        } catch {
+            let listError = error.localizedDescription
+            do {
+                _ = try await remoteAI.extractTodos(
+                    from: "明天上午十点开会", now: Date(), config: config, apiKey: key)
+                return ([], "对话接口可用，但拉不到模型列表：\(listError)")
+            } catch {
+                return ([], "连接失败：\(error.localizedDescription)")
+            }
+        }
+    }
+
+    func copyKeyToPasteboard() -> Bool {
+        let account = SecretBox.account(for: settings.settings.ai.provider)
+        guard let key = SecretBox.load(account: account), !key.isEmpty else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(key, forType: .string)
+        return true
+    }
+
     func testAIConnection() async -> String {
         let config = settings.settings.ai
         let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
@@ -230,7 +260,7 @@ final class AppController: ObservableObject, TodoIngest {
             let window = NSWindow(contentViewController: hosting)
             window.title = "Todolist 设置"
             window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 520, height: 620))
+            window.setContentSize(NSSize(width: 520, height: 640))
             window.center()
             window.isReleasedWhenClosed = false
             settingsWindow = window
