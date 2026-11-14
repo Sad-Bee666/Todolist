@@ -204,7 +204,15 @@ struct TodoPanelView: View {
                     Label("截图识别", systemImage: "camera.viewfinder")
                 }
                 .buttonStyle(.bordered)
-                modelMenu
+                if app.keyPresent {
+                    modelMenu
+                } else {
+                    Button { actions.openSettings() } label: {
+                        Label("配置模型", systemImage: "gearshape")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("还没配置 API Key，点这里去填")
+                }
                 Spacer(minLength: 4)
                 Toggle("", isOn: Binding(
                     get: { app.settings.settings.useRemoteModel },
