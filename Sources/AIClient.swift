@@ -194,12 +194,21 @@ final class MockAIService: AIServicing {
 
         var results: [ParsedTodo] = []
         for segment in splitSegments(text) {
-            let work = NSMutableString(string: segment)
+            let work = NSMutableString(string: normalizeChineseNumerals(segment))
             var day: Date?
             if day == nil { day = takeAbsoluteDate(work, calendar: calendar, now: now, todayStart: todayStart) }
             if day == nil { day = takeWeekday(work, calendar: calendar, todayStart: todayStart) }
             if day == nil { day = takeRelativeDay(work, calendar: calendar, todayStart: todayStart) }
-            let time = takeTimeOfDay(work)
+
+            // 时间段（如「一点半到三点」）取开始时刻
+            var note = ""
+            var time: (hour: Int, minute: Int)?
+            if let range = takeTimeRange(work) {
+                time = (range.hour, range.minute)
+                note = range.raw
+            } else {
+                time = takeTimeOfDay(work)
+            }
 
             var deadline: Date?
             if let day {
@@ -213,9 +222,9 @@ final class MockAIService: AIServicing {
                 deadline = candidate
             }
 
-            let title = cleanTitle(work)
+            let title = cleanTitle(NSMutableString(string: scrubResidualTime(work as String)))
             guard !title.isEmpty else { continue }
-            results.append(ParsedTodo(title: title, deadline: deadline, note: ""))
+            results.append(ParsedTodo(title: title, deadline: deadline, note: note))
         }
         return results
     }
@@ -307,6 +316,101 @@ final class MockAIService: AIServicing {
         return date
     }
 
+    // MARK: 时间段
+
+    /// 「A 到 B」型时间段：取开始时刻作为截止时间，原文进 note。
+    private func takeTimeRange(_ work: NSMutableString) -> (hour: Int, minute: Int, raw: String)? {
+        let atom = "(?:上午|下午|晚上|早上|凌晨|中午|傍晚|夜里)?\\s*\\d{1,2}\\s*(?:点\\s*(?:半|一刻|三刻|\\d{1,2}\\s*分)?|[:：]\\s*\\d{1,2})"
+
+        // 时间词落在段尾会先被 takeTimeOfDay 拿走，所以先在这里整体吞掉
+        if let hit = firstHit("(\(atom))\\s*(?:到|至|-|~|—|–)\\s*\(atom)", in: work) {
+            let first = hit.groups[0] ?? ""
+            delete(hit, from: work)
+            let scratch = NSMutableString(string: first)
+            if let start = takeTimeOfDay(scratch) {
+                return (start.hour, start.minute, first)
+            }
+            return nil
+        }
+
+        // 起点只写了「上午/下午」：「下午到三点」
+        if let hit = firstHit("(上午|下午|晚上|早上|凌晨|中午|傍晚|夜里)\\s*(?:到|至)\\s*\(atom)", in: work),
+           let word = hit.groups[0],
+           let start = defaultTime(for: word) {
+            delete(hit, from: work)
+            return (start.hour, start.minute, word)
+        }
+
+        return nil
+    }
+
+    // MARK: 中文数字
+
+    /// 把「十点」「一点半」「十分钟」里的中文数字换成阿拉伯数字，后面的正则只管数字。
+    private func normalizeChineseNumerals(_ text: String) -> String {
+        var result = text
+        result = replaceChineseNumbers(in: result, before: ["点", "时", ":", "："])
+        result = replaceChineseNumbers(in: result, before: ["分"])
+        return result
+    }
+
+    private func replaceChineseNumbers(in text: String, before suffixes: [String]) -> String {
+        let suffix = suffixes.joined(separator: "|")
+        let pattern = "([一二三四五六七八九十两]{1,3})(?=\\s*(?:\(suffix)))"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return text }
+        let ns = NSMutableString(string: text)
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        for match in matches.reversed() {
+            let group = match.range(at: 1)
+            guard let swiftRange = Range(group, in: text),
+                  let value = chineseNumber(String(text[swiftRange])) else { continue }
+            ns.replaceCharacters(in: group, with: String(value))
+        }
+        return ns as String
+    }
+
+    private func chineseNumber(_ text: String) -> Int? {
+        if text == "两" { return 2 }
+        if let direct = chineseDigit(text) { return direct }
+        guard text.contains("十") else { return nil }
+        let parts = text.split(separator: "十", omittingEmptySubsequences: false)
+        let tens = parts.first.flatMap { $0.isEmpty ? 1 : chineseDigit(String($0)) } ?? 1
+        let ones = parts.count > 1 ? (parts[1].isEmpty ? 0 : chineseDigit(String(parts[1])) ?? 0) : 0
+        return tens * 10 + ones
+    }
+
+    private func chineseDigit(_ text: String) -> Int? {
+        switch text {
+        case "零": return 0
+        case "一": return 1
+        case "二": return 2
+        case "两": return 2
+        case "三": return 3
+        case "四": return 4
+        case "五": return 5
+        case "六": return 6
+        case "七": return 7
+        case "八": return 8
+        case "九": return 9
+        case "十": return 10
+        default: return nil
+        }
+    }
+
+    /// 兜底：解析过的文字里若还残留时间词，别让它进标题。
+    private func scrubResidualTime(_ text: String) -> String {
+        var result = text
+        result = result.replacingOccurrences(
+            of: "(?:上午|下午|晚上|早上|凌晨|中午|傍晚|夜里)\\s*(?:到|至)?\\s*", with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: "\\d{1,2}\\s*(?:点|时)\\s*(?:半|一刻|三刻|\\d{1,2}\\s*分)?\\s*(?:到|至)?", with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(
+            of: "\\d{1,2}\\s*[:：]\\s*\\d{1,2}", with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(of: "^(?:到|至|~|-|—|–)\\s*", with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "^(?:到|至|~|-|—|–)\\s*", with: "", options: .regularExpression)
+        return result
+    }
+
     // MARK: 时刻
 
     private func takeTimeOfDay(_ work: NSMutableString) -> (hour: Int, minute: Int)? {
@@ -356,8 +460,11 @@ final class MockAIService: AIServicing {
             if adjusted < 11 { adjusted += 12 }
         case "凌晨":
             if adjusted == 12 { adjusted = 0 }
-        default:
+        case "上午", "早上":
             break
+        default:
+            // 只说「三点」通常指 15:00，不会是凌晨 3 点
+            if (1...5).contains(adjusted) { adjusted += 12 }
         }
         guard adjusted >= 0, adjusted <= 23 else { return nil }
         return (adjusted, minute)
@@ -441,5 +548,15 @@ final class MockAIService: AIServicing {
     private func delete(_ hit: RegexHit, from text: NSMutableString) {
         guard hit.range.location != NSNotFound else { return }
         text.deleteCharacters(in: hit.range)
+        // 时间词紧跟着「前/之前/以内」时一并吞掉，避免残留在标题开头
+        let location = hit.range.location
+        for suffix in ["之前", "以前", "以内", "前"] as [NSString] {
+            guard location + suffix.length <= text.length else { continue }
+            let slice = NSRange(location: location, length: suffix.length)
+            if text.substring(with: slice) == suffix as String {
+                text.deleteCharacters(in: slice)
+                break
+            }
+        }
     }
 }
