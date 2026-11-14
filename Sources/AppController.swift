@@ -371,6 +371,16 @@ final class AppController: ObservableObject, TodoIngest {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--self-test") {
+            Task { @MainActor in
+                let result = await AppController.shared.diagnoseCapture()
+                let path = TodoStore.defaultDirectory().appendingPathComponent("selftest.txt")
+                try? result.write(to: path, atomically: true, encoding: .utf8)
+                NSLog("[selftest] " + result)
+                NSApp.terminate(nil)
+            }
+            return
+        }
         if let snapshotDir = ProcessInfo.processInfo.environment["TODOLIST_SNAPSHOT"], !snapshotDir.isEmpty {
             SnapshotTool.render(into: snapshotDir)
             NSApp.terminate(nil)

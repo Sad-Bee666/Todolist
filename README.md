@@ -15,7 +15,7 @@ MIT License · 无第三方依赖 · 纯 Swift / AppKit + SwiftUI
 ```bash
 ./scripts/setup-signing.sh   # 一次性：创建本地 code signing 证书（见下）
 ./build.sh                   # 产出 dist/Todolist.app（有证书就用证书签名）
-./install.sh                 # 复制到 ~/Applications 并启动
+./install.sh                 # 复制到 /Applications 并启动（不可写时退回 ~/Applications）
 ./package.sh                 # 产出 dist/Todolist-x.y.z.dmg
 ```
 
@@ -83,6 +83,8 @@ OpenAI 兼容协议（`POST <Base URL>/chat/completions`），三档预设：
 - ad-hoc 签名每次重新构建都会变，授权会失效，需要重新勾选；只想改配置不想重授权就别重构建
 - 免权限兜底：按 **⇧⌘4** 用系统截图，然后在面板「⋯」或设置页点「导入最近截图」，应用会读桌面最新截图走同一条 OCR + 解析管线
 - 全局快捷键用 Carbon `RegisterEventHotKey`，不需要辅助功能权限
+- **授权必须重开应用才生效**：勾选后仍然截到空白图，基本就是进程还是授权前启动的那一个
+- 自检：`open -a /Applications/Todolist.app --args --self-test`，结果写入 `~/Library/Application Support/Todolist/selftest.txt`（报告截图尺寸、是否空白图、识别字数）
 
 ## 数据
 
