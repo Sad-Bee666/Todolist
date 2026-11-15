@@ -47,11 +47,15 @@ enum SecretBox {
         "api-key-" + provider.rawValue
     }
 
-    /// 把旧版 provider 账户下的 Key 复制到配置账户（已存在则不动）。
-    static func migrateKeyIfNeeded(from provider: AIProvider, toProfile id: UUID) {
+    /// 把旧版 provider 账户下的 Key 搬到配置账户；搬完删除旧文件，避免被新建配置误继承。
+    @discardableResult
+    static func migrateKeyIfNeeded(from provider: AIProvider, toProfile id: UUID) -> Bool {
         let target = account(forProfile: id)
+        let legacyAccount = account(for: provider)
         guard load(account: target) == nil,
-              let legacy = load(account: account(for: provider)), !legacy.isEmpty else { return }
+              let legacy = load(account: legacyAccount), !legacy.isEmpty else { return false }
         save(legacy, account: target)
+        delete(account: legacyAccount)
+        return true
     }
 }

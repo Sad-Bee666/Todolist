@@ -188,11 +188,13 @@ final class SettingsStore: ObservableObject {
             if profile.name.trimmingCharacters(in: .whitespaces).isEmpty {
                 profile.name = profile.provider.displayName
             }
-            if profile.baseURL.trimmingCharacters(in: .whitespaces).isEmpty
-                || profile.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                profile.provider = .deepseek
-                profile.baseURL = AIProvider.deepseek.defaultBaseURL
-                profile.model = AIProvider.deepseek.defaultModel
+            // 只补缺失字段：已配置的提供商与地址绝不能被覆盖
+            if profile.baseURL.trimmingCharacters(in: .whitespaces).isEmpty {
+                profile.baseURL = profile.provider.defaultBaseURL
+            }
+            if profile.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                profile.model = profile.models.first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+                    ?? profile.provider.defaultModel
             }
             var list = profile.models.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             if list.isEmpty { list = [profile.model] }

@@ -111,11 +111,15 @@ final class AppController: ObservableObject, TodoIngest {
     }
 
     func migrateLegacyKeysIfNeeded() {
-        guard !settings.settings.migratedLegacyKeys else { return }
+        var migrated = false
         for profile in settings.settings.profiles {
-            SecretBox.migrateKeyIfNeeded(from: profile.provider, toProfile: profile.id)
+            if SecretBox.migrateKeyIfNeeded(from: profile.provider, toProfile: profile.id) {
+                migrated = true
+            }
         }
-        settings.settings.migratedLegacyKeys = true
+        if migrated || !settings.settings.migratedLegacyKeys {
+            settings.settings.migratedLegacyKeys = true
+        }
         refreshKeyPresence()
     }
 
