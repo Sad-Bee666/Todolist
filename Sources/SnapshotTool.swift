@@ -20,8 +20,11 @@ enum SnapshotTool {
             let empty = TodoPanelView(store: emptyStore, app: app, actions: app.makeActions())
             write(empty, size: NSSize(width: 380, height: 520), to: dir.appendingPathComponent("panel-empty.png"))
 
+            let apiTab = APIProfilesTab(app: app, settings: app.settings)
+            write(apiTab, size: NSSize(width: 580, height: 600), to: dir.appendingPathComponent("api-profiles.png"))
+
             let settings = SettingsView(app: app, settings: app.settings)
-            write(settings, size: NSSize(width: 520, height: 640), to: dir.appendingPathComponent("settings.png"))
+            write(settings, size: NSSize(width: 580, height: 640), to: dir.appendingPathComponent("settings.png"))
 
             let chooser = ModelChooser(
                 models: ["deepseek-chat", "deepseek-reasoner", "gpt-4o-mini"],

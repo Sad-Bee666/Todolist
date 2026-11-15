@@ -177,28 +177,35 @@ final class SettingsStore: ObservableObject {
         try? data.write(to: fileURL, options: .atomic)
     }
 
-    /// 空的 Base URL / 模型名无法路由，会让界面显示失真；回落到 DeepSeek 预设。
+    /// 空的 Base URL / 模型名无法路由；逐份配置归一，并保证「当前配置」有效。
     static func sanitized(_ value: AppSettings) -> AppSettings {
         var fixed = value
-        let base = fixed.ai.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = fixed.ai.model.trimmingCharacters(in: .whitespacesAndNewlines)
-        if base.isEmpty || model.isEmpty {
-            fixed.ai.provider = .deepseek
-            fixed.ai.baseURL = AIProvider.deepseek.defaultBaseURL
-            fixed.ai.model = AIProvider.deepseek.defaultModel
+        if fixed.profiles.isEmpty {
+            fixed.profiles = [APIProfile(name: AIProvider.deepseek.displayName)]
         }
-        var list = fixed.ai.models.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if list.isEmpty { list = [fixed.ai.model] }
-        if !list.contains(fixed.ai.model) { list.insert(fixed.ai.model, at: 0) }
-        fixed.ai.models = list
+        for index in fixed.profiles.indices {
+            var profile = fixed.profiles[index]
+            if profile.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                profile.name = profile.provider.displayName
+            }
+            if profile.baseURL.trimmingCharacters(in: .whitespaces).isEmpty
+                || profile.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                profile.provider = .deepseek
+                profile.baseURL = AIProvider.deepseek.defaultBaseURL
+                profile.model = AIProvider.deepseek.defaultModel
+            }
+            var list = profile.models.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            if list.isEmpty { list = [profile.model] }
+            if !list.contains(profile.model) { list.insert(profile.model, at: 0) }
+            if list.count > 12 { list = Array(list.prefix(12)) }
+            profile.models = list
+            fixed.profiles[index] = profile
+        }
+        let ids = Set(fixed.profiles.map { $0.id })
+        if fixed.activeProfileID == nil || !ids.contains(fixed.activeProfileID!) {
+            fixed.activeProfileID = fixed.profiles.first?.id
+        }
         return fixed
     }
 
-    func applyProviderDefaults(_ provider: AIProvider) {
-        var ai = settings.ai
-        ai.provider = provider
-        ai.baseURL = provider.defaultBaseURL
-        ai.model = provider.defaultModel
-        settings.ai = ai
-    }
 }

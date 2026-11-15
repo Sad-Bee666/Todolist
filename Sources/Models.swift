@@ -172,33 +172,137 @@ struct HotKeySpec: Codable, Equatable {
     static let standard = HotKeySpec(keyCode: 17, carbonModifiers: 0x1000 | 0x0800, display: "⌃⌥T")
 }
 
+/// 一份可保存的 API 配置；密钥另存在 SecretBox，按 id 归档。
+struct APIProfile: Identifiable, Codable, Equatable {
+    var id: UUID
+    var name: String
+    var provider: AIProvider
+    var baseURL: String
+    var model: String
+    var models: [String]
+    var timeout: TimeInterval
+
+    init(id: UUID = UUID(),
+         name: String,
+         provider: AIProvider = .deepseek,
+         baseURL: String? = nil,
+         model: String? = nil,
+         models: [String]? = nil,
+         timeout: TimeInterval = 60) {
+        let resolvedModel = model ?? provider.defaultModel
+        self.id = id
+        self.name = name
+        self.provider = provider
+        self.baseURL = baseURL ?? provider.defaultBaseURL
+        self.model = resolvedModel
+        self.models = models ?? [resolvedModel]
+        self.timeout = timeout
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        provider = try container.decodeIfPresent(AIProvider.self, forKey: .provider) ?? .deepseek
+        let storedName = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        name = storedName.isEmpty ? provider.displayName : storedName
+        let storedBase = try container.decodeIfPresent(String.self, forKey: .baseURL) ?? ""
+        baseURL = storedBase.isEmpty ? provider.defaultBaseURL : storedBase
+        let storedModel = try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+        model = storedModel.isEmpty ? provider.defaultModel : storedModel
+        let storedModels = try container.decodeIfPresent([String].self, forKey: .models) ?? []
+        models = storedModels.isEmpty ? [model] : storedModels
+        timeout = try container.decodeIfPresent(TimeInterval.self, forKey: .timeout) ?? 60
+    }
+
+    var config: AIConfig {
+        AIConfig(provider: provider, baseURL: baseURL, model: model, models: models, timeout: timeout)
+    }
+
+    var selectableModels: [String] { config.selectableModels }
+    var isRoutable: Bool { config.isRoutable }
+}
+
 struct AppSettings: Codable, Equatable {
-    var ai: AIConfig
+    var profiles: [APIProfile]
+    var activeProfileID: UUID?
     var hotkey: HotKeySpec
     var hoverOpensPanel: Bool
     var hoverCloseDelay: Double
     /// 面板上的「用 API 模型」开关：关掉则一律用本地规则解析。
     var useRemoteModel: Bool
+    /// 旧版按 provider 存的密钥是否已搬到配置账户上（只做一次）。
+    var migratedLegacyKeys: Bool
 
-    init(ai: AIConfig = AIConfig(),
+    private enum CodingKeys: String, CodingKey {
+        case profiles, activeProfileID, hotkey, hoverOpensPanel, hoverCloseDelay, useRemoteModel, migratedLegacyKeys
+        /// 旧版单配置字段，只读兼容。
+        case ai
+    }
+
+    init(profiles: [APIProfile] = [],
+         activeProfileID: UUID? = nil,
          hotkey: HotKeySpec = .standard,
          hoverOpensPanel: Bool = true,
          hoverCloseDelay: Double = 0.35,
          useRemoteModel: Bool = true) {
-        self.ai = ai
+        let list = profiles.isEmpty ? [APIProfile(name: AIProvider.deepseek.displayName)] : profiles
+        self.profiles = list
+        self.activeProfileID = activeProfileID ?? list.first?.id
         self.hotkey = hotkey
         self.hoverOpensPanel = hoverOpensPanel
         self.hoverCloseDelay = hoverCloseDelay
         self.useRemoteModel = useRemoteModel
+        self.migratedLegacyKeys = false
+    }
+
+    /// 当前使用的配置；ID 失配时退回第一份。
+    var activeProfile: APIProfile? {
+        profiles.first { $0.id == activeProfileID } ?? profiles.first
+    }
+
+    /// 供解析链路使用的视图（面板与 AI 客户端都读它）。
+    var ai: AIConfig {
+        activeProfile?.config ?? APIProfile(name: AIProvider.deepseek.displayName).config
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        ai = try container.decodeIfPresent(AIConfig.self, forKey: .ai) ?? AIConfig()
+        var decodedProfiles = try container.decodeIfPresent([APIProfile].self, forKey: .profiles) ?? []
+
+        // 旧版只有单个 ai 配置：迁移成一份名为「提供商」的配置
+        if decodedProfiles.isEmpty,
+           let legacy = try container.decodeIfPresent(AIConfig.self, forKey: .ai) {
+            decodedProfiles = [APIProfile(
+                name: legacy.provider.displayName,
+                provider: legacy.provider,
+                baseURL: legacy.baseURL,
+                model: legacy.model,
+                models: legacy.models,
+                timeout: legacy.timeout
+            )]
+        }
+        if decodedProfiles.isEmpty {
+            decodedProfiles = [APIProfile(name: AIProvider.deepseek.displayName)]
+        }
+
+        profiles = decodedProfiles
+        activeProfileID = try container.decodeIfPresent(UUID.self, forKey: .activeProfileID) ?? decodedProfiles.first?.id
         hotkey = try container.decodeIfPresent(HotKeySpec.self, forKey: .hotkey) ?? .standard
         hoverOpensPanel = try container.decodeIfPresent(Bool.self, forKey: .hoverOpensPanel) ?? true
         hoverCloseDelay = try container.decodeIfPresent(Double.self, forKey: .hoverCloseDelay) ?? 0.35
         useRemoteModel = try container.decodeIfPresent(Bool.self, forKey: .useRemoteModel) ?? true
+        migratedLegacyKeys = try container.decodeIfPresent(Bool.self, forKey: .migratedLegacyKeys) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profiles, forKey: .profiles)
+        try container.encodeIfPresent(activeProfileID, forKey: .activeProfileID)
+        try container.encode(hotkey, forKey: .hotkey)
+        try container.encode(hoverOpensPanel, forKey: .hoverOpensPanel)
+        try container.encode(hoverCloseDelay, forKey: .hoverCloseDelay)
+        try container.encode(useRemoteModel, forKey: .useRemoteModel)
+        try container.encode(migratedLegacyKeys, forKey: .migratedLegacyKeys)
     }
 }
 

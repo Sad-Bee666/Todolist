@@ -28,6 +28,7 @@ final class AppController: ObservableObject, TodoIngest {
     }
 
     func start() {
+        migrateLegacyKeysIfNeeded()
         refreshKeyPresence()
 
         let panel = TodoPanelView(store: store, app: self, actions: makeActions())
@@ -49,7 +50,9 @@ final class AppController: ObservableObject, TodoIngest {
         }
     }
 
-    /// 真正生效的远端判定：开关打开 + 有 Key + 接口可路由。
+    var activeProfile: APIProfile? { settings.settings.activeProfile }
+
+    /// 真正生效的远端判定：开关打开 + 当前配置有 Key + 接口可路由。
     var usesRemoteModel: Bool {
         settings.settings.useRemoteModel && keyPresent && settings.settings.ai.isRoutable
     }
@@ -59,6 +62,61 @@ final class AppController: ObservableObject, TodoIngest {
         let model = settings.settings.ai.model
         guard !model.isEmpty else { return "选择模型" }
         return keyPresent ? model : model + " · 缺 Key"
+    }
+
+    // MARK: - API 配置管理
+
+    func config(for profileID: UUID) -> AIConfig {
+        settings.settings.profiles.first { $0.id == profileID }?.config ?? settings.settings.ai
+    }
+
+    func key(for profileID: UUID) -> String {
+        SecretBox.load(account: SecretBox.account(forProfile: profileID)) ?? ""
+    }
+
+    func saveKey(_ value: String, for profileID: UUID) {
+        SecretBox.save(value, account: SecretBox.account(forProfile: profileID))
+        if settings.settings.activeProfileID == profileID { refreshKeyPresence() }
+    }
+
+    func deleteKey(for profileID: UUID) {
+        SecretBox.delete(account: SecretBox.account(forProfile: profileID))
+        if settings.settings.activeProfileID == profileID { refreshKeyPresence() }
+    }
+
+    @discardableResult
+    func addProfile() -> UUID {
+        let profile = APIProfile(name: "API " + String(settings.settings.profiles.count + 1))
+        settings.settings.profiles.append(profile)
+        return profile.id
+    }
+
+    func deleteProfile(_ profileID: UUID) {
+        guard settings.settings.profiles.count > 1 else {
+            postStatus("至少保留一份 API 配置", isError: true)
+            return
+        }
+        settings.settings.profiles.removeAll { $0.id == profileID }
+        SecretBox.delete(account: SecretBox.account(forProfile: profileID))
+        if settings.settings.activeProfileID == profileID {
+            settings.settings.activeProfileID = settings.settings.profiles.first?.id
+        }
+        refreshKeyPresence()
+    }
+
+    func setActiveProfile(_ profileID: UUID) {
+        settings.settings.activeProfileID = profileID
+        refreshKeyPresence()
+        postStatus("当前 API：" + (activeProfile?.name ?? "-"))
+    }
+
+    func migrateLegacyKeysIfNeeded() {
+        guard !settings.settings.migratedLegacyKeys else { return }
+        for profile in settings.settings.profiles {
+            SecretBox.migrateKeyIfNeeded(from: profile.provider, toProfile: profile.id)
+        }
+        settings.settings.migratedLegacyKeys = true
+        refreshKeyPresence()
     }
 
     func setUseRemoteModel(_ enabled: Bool) {
@@ -74,16 +132,17 @@ final class AppController: ObservableObject, TodoIngest {
 
     /// 面板上选择本次调用哪个模型（多选列表里的一个）。
     func useModel(_ name: String) {
-        var ai = settings.settings.ai
-        ai.model = name
-        if !ai.models.contains(name) { ai.models.append(name) }
-        settings.settings.ai = ai
+        guard let index = settings.settings.profiles.firstIndex(where: { $0.id == settings.settings.activeProfile?.id }) else { return }
+        var profile = settings.settings.profiles[index]
+        profile.model = name
+        if !profile.models.contains(name) { profile.models.append(name) }
+        settings.settings.profiles[index] = profile
         settings.settings.useRemoteModel = true
         refreshKeyPresence()
         if keyPresent {
             postStatus("已切换到 " + name)
         } else {
-            postStatus("已选 " + name + "，还缺 " + ai.provider.displayName + " 的 API Key", isError: true)
+            postStatus("已选 " + name + "，还缺该 API 的 Key", isError: true)
         }
     }
 
@@ -175,7 +234,7 @@ final class AppController: ObservableObject, TodoIngest {
 
     private func extractAndStoreReturningCount(text: String, source: TodoSource) async throws -> Int {
         let config = settings.settings.ai
-        let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
+        let key = activeProfile.map { self.key(for: $0.id) } ?? ""
         let useRemote = settings.settings.useRemoteModel && !key.isEmpty && config.isRoutable
         let service: AIServicing = useRemote ? remoteAI : localAI
         let parsed = try await service.extractTodos(from: text, now: Date(), config: config, apiKey: key)
@@ -190,9 +249,10 @@ final class AppController: ObservableObject, TodoIngest {
     }
 
     /// 保存 Key 后的连通性测试：优先 /models（顺带拿到可用模型），失败再退回一次对话探测。
-    func probeConnection() async -> (models: [String], message: String) {
-        let config = settings.settings.ai
-        let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
+    func probeConnection(profileID: UUID? = nil) async -> (models: [String], message: String) {
+        let targetID = profileID ?? settings.settings.activeProfileID ?? UUID()
+        let config = self.config(for: targetID)
+        let key = self.key(for: targetID)
         guard !key.isEmpty else { return ([], "还没填 API Key") }
         guard config.isRoutable else { return ([], "Base URL 或模型名不合法") }
 
@@ -228,9 +288,10 @@ final class AppController: ObservableObject, TodoIngest {
         return AppController.keyCandidate(from: raw)
     }
 
-    func testAIConnection() async -> String {
-        let config = settings.settings.ai
-        let key = SecretBox.load(account: SecretBox.account(for: config.provider)) ?? ""
+    func testAIConnection(profileID: UUID? = nil) async -> String {
+        let targetID = profileID ?? settings.settings.activeProfileID ?? UUID()
+        let config = self.config(for: targetID)
+        let key = self.key(for: targetID)
         guard !key.isEmpty else { return "还没保存 API Key" }
         guard config.isRoutable else { return "Base URL 或模型名不合法" }
         do {
@@ -331,8 +392,11 @@ final class AppController: ObservableObject, TodoIngest {
     // MARK: - 杂项
 
     func refreshKeyPresence() {
-        let account = SecretBox.account(for: settings.settings.ai.provider)
-        keyPresent = !(SecretBox.load(account: account) ?? "").isEmpty
+        guard let id = settings.settings.activeProfile?.id else {
+            keyPresent = false
+            return
+        }
+        keyPresent = !key(for: id).isEmpty
     }
 
     func registerHotKey() {
@@ -359,7 +423,7 @@ final class AppController: ObservableObject, TodoIngest {
             let window = NSWindow(contentViewController: hosting)
             window.title = "Todolist 设置"
             window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 520, height: 640))
+            window.setContentSize(NSSize(width: 580, height: 640))
             window.center()
             window.isReleasedWhenClosed = false
             settingsWindow = window

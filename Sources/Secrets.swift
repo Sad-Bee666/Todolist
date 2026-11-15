@@ -37,8 +37,21 @@ enum SecretBox {
         try? FileManager.default.removeItem(at: url(account: account))
     }
 
-    /// 每个 provider 独立存一个 Key，切换预设不互相覆盖。
+    /// 每个 API 配置独立存一个 Key。
+    static func account(forProfile id: UUID) -> String {
+        "api-key-" + id.uuidString
+    }
+
+    /// 旧版按 provider 存的账户名，仅用于迁移。
     static func account(for provider: AIProvider) -> String {
         "api-key-" + provider.rawValue
+    }
+
+    /// 把旧版 provider 账户下的 Key 复制到配置账户（已存在则不动）。
+    static func migrateKeyIfNeeded(from provider: AIProvider, toProfile id: UUID) {
+        let target = account(forProfile: id)
+        guard load(account: target) == nil,
+              let legacy = load(account: account(for: provider)), !legacy.isEmpty else { return }
+        save(legacy, account: target)
     }
 }
