@@ -439,6 +439,23 @@ final class AppController: ObservableObject, TodoIngest {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--login-item") }) {
+            let result: String
+            switch flag {
+            case "--login-item-on":
+                result = LaunchAtLogin.setEnabled(true).map { "开启失败：" + $0 } ?? "已开启"
+            case "--login-item-off":
+                result = LaunchAtLogin.setEnabled(false).map { "关闭失败：" + $0 } ?? "已关闭"
+            default:
+                result = "当前状态：" + LaunchAtLogin.statusText
+            }
+            let line = result + "（isEnabled=" + String(LaunchAtLogin.isEnabled) + "）"
+            try? line.write(to: TodoStore.defaultDirectory().appendingPathComponent("login-item.txt"),
+                            atomically: true, encoding: .utf8)
+            NSLog("[login-item] " + line)
+            NSApp.terminate(nil)
+            return
+        }
         if CommandLine.arguments.contains("--self-test") {
             Task { @MainActor in
                 let result = await AppController.shared.diagnoseCapture()

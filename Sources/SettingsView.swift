@@ -23,6 +23,8 @@ struct GeneralSettingsTab: View {
     @ObservedObject var settings: SettingsStore
 
     @State private var screenGranted: Bool = ScreenCapturePermission.isGranted
+    @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
+    @State private var loginItemMessage: String?
     @State private var captureDiagnostic: String?
 
     var body: some View {
@@ -36,7 +38,10 @@ struct GeneralSettingsTab: View {
             }
             .padding(18)
         }
-        .onAppear { screenGranted = ScreenCapturePermission.isGranted }
+        .onAppear {
+            screenGranted = ScreenCapturePermission.isGranted
+            launchAtLogin = LaunchAtLogin.isEnabled
+        }
     }
 
     private var hotkeySection: some View {
@@ -99,6 +104,23 @@ struct GeneralSettingsTab: View {
             Text("行为").font(.headline)
             Toggle("鼠标移到菜单栏图标上自动展开面板", isOn: $settings.settings.hoverOpensPanel)
                 .toggleStyle(.switch)
+            Toggle("登录时自动启动", isOn: Binding(
+                get: { launchAtLogin },
+                set: { on in
+                    if let error = LaunchAtLogin.setEnabled(on) {
+                        loginItemMessage = "设置失败：" + error
+                    } else {
+                        loginItemMessage = LaunchAtLogin.statusText
+                    }
+                    launchAtLogin = LaunchAtLogin.isEnabled
+                }
+            ))
+            .toggleStyle(.switch)
+            if let loginItemMessage {
+                Text(loginItemMessage)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
             Toggle("面板上的「用 API 模型」开关（关闭则用本地规则解析）", isOn: Binding(
                 get: { settings.settings.useRemoteModel },
                 set: { app.setUseRemoteModel($0) }
