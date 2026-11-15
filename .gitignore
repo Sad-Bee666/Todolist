@@ -6,5 +6,8 @@ dist/
 # 本地验证脚本与截图草稿
 scratch/
 
+# 本机构建覆盖（如 bundle id），不入库
+.local/
+
 # macOS
 .DS_Store

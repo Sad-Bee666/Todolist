@@ -24,6 +24,15 @@ swiftc \
 echo "==> 组装 .app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+
+# 本机构建可覆盖 bundle id（.local/bundle-id，不入库），用于保住已授予的 TCC 权限
+if [ -f "$ROOT/.local/bundle-id" ]; then
+  LOCAL_ID="$(tr -d '[:space:]' < "$ROOT/.local/bundle-id")"
+  if [ -n "$LOCAL_ID" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $LOCAL_ID" "$APP/Contents/Info.plist"
+    echo "==> 本机 bundle id：$LOCAL_ID"
+  fi
+fi
 cp "$BUILD_DIR/$APP_NAME" "$APP/Contents/MacOS/$APP_NAME"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
