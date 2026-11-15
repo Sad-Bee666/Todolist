@@ -1,5 +1,11 @@
 # Todolist.app
 
+[![Release](https://img.shields.io/github/v/release/Sad-Bee666/Todolist?display_name=tag&sort=semver)](https://github.com/Sad-Bee666/Todolist/releases)
+[![License](https://img.shields.io/github/license/Sad-Bee666/Todolist)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)](https://github.com/Sad-Bee666/Todolist)
+[![Swift](https://img.shields.io/badge/Swift-5.0-orange)](https://swift.org)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](https://github.com/Sad-Bee666/Todolist)
+
 菜单栏常驻的原生 macOS 待办应用。事项以「截止时间 + 事项」呈现，支持手写填入、截图 OCR 提取、以及模型解析自然语言写入。
 
 <img src="docs/screenshots/panel.png" width="380" alt="菜单栏面板">
@@ -33,7 +39,7 @@ security remove-trusted-cert -d <导出的 cert.pem>              # 撤销信任
 
 推送 `v*` 形式的 tag 会触发 GitHub Actions 自动构建并上传 DMG 到 Release。
 
-- 需要 macOS 14+（本机 26.4，arm64）。
+- 需要 macOS 14+。
 - 工具链只依赖 Xcode Command Line Tools。构建脚本显式传入 `-sdk` 与 `-module-cache-path`（沙箱环境下模块缓存必须落在项目内）。
 - 应用是 `LSUIElement`（无 Dock 图标、无菜单栏主菜单），启动后只看右上角图标。
 
@@ -53,8 +59,6 @@ security remove-trusted-cert -d <导出的 cert.pem>              # 撤销信任
 | 「⋯」 | 清除已完成 / 打开数据文件夹 / 退出 |
 
 列表排序：未完成按截止时间升序，无截止时间的置底；已完成沉底。过期项整体标红。
-
-时间呈现：**只有「今天」「明天」用相对说法，其余（含已过期）一律用日期**，例如 `11月21日 22:55`、`2027年12月19日 22:55`。
 
 ## AI 接口
 
